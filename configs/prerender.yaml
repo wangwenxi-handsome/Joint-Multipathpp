@@ -1,0 +1,7 @@
+- renderer_name: MultiPathPPRenderer
+  renderer_config:
+    normalize: False
+    segment_filtering:
+      policy: "n_closest_segments"
+      n_closest_segments: 128
+    drop_segments: 6
