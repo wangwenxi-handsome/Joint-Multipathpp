@@ -1,1 +1,1 @@
-# waymo_sim_agent
+# Autonomous driving sim_agent in waymo competition
