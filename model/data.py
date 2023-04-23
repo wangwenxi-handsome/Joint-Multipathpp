@@ -114,81 +114,67 @@ class MultiPathPPDataset(Dataset):
         return len(self._files)
     
     def _generate_sin_cos(self, data):
-        data["target/history/yaw_sin"] = np.sin(data["target/history/yaw"])
-        data["target/history/yaw_cos"] = np.cos(data["target/history/yaw"])
-        data["other/history/yaw_sin"] = np.sin(data["other/history/yaw"])
-        data["other/history/yaw_cos"] = np.cos(data["other/history/yaw"])
+        data["history/yaw_sin"] = np.sin(data["history/yaw"])
+        data["history/yaw_cos"] = np.cos(data["history/yaw"])
         return data
     
     def _add_length_width(self, data):
-        data["target/history/length"] = \
-            data["target/length"].reshape(-1, 1, 1) * np.ones_like(data["target/history/yaw"])
-        data["target/history/width"] = \
-            data["target/width"].reshape(-1, 1, 1) * np.ones_like(data["target/history/yaw"])
-
-        data["other/history/length"] = \
-            data["other/length"].reshape(-1, 1, 1) * np.ones_like(data["other/history/yaw"])
-        data["other/history/width"] = \
-            data["other/width"].reshape(-1, 1, 1) * np.ones_like(data["other/history/yaw"])
+        data["history/length"] = \
+            data["length"].reshape(-1, 1, 1) * np.ones_like(data["history/yaw"])
+        data["history/width"] = \
+            data["width"].reshape(-1, 1, 1) * np.ones_like(data["history/yaw"])
         return data
     
     def _compute_agent_diff_features(self, data):
-        diff_keys = ["target/history/xy", "target/history/yaw", "target/history/speed",
-            "other/history/xy", "other/history/yaw", "other/history/speed"]
+        diff_keys = ["history/xy", "history/yaw", "history/speed"]
         for key in diff_keys:
             if key.endswith("yaw"):
                 data[f"{key}_diff"] = angle_to_range(np.diff(data[key], axis=1))
             else:
                 data[f"{key}_diff"] = np.diff(data[key], axis=1)
-        data["target/history/yaw_sin_diff"] = np.sin(data["target/history/yaw_diff"])
-        data["target/history/yaw_cos_diff"] = np.cos(data["target/history/yaw_diff"])
-        data["other/history/yaw_sin_diff"] = np.sin(data["other/history/yaw_diff"])
-        data["other/history/yaw_cos_diff"] = np.cos(data["other/history/yaw_diff"])
-        data["target/history/valid_diff"] = (data["target/history/valid"] * \
-            np.concatenate([
-                data["target/history/valid"][:, 1:, :],
-                np.zeros((data["target/history/valid"].shape[0], 1, 1))
-            ], axis=1))[:, :-1, :]
-        data["other/history/valid_diff"] = (data["other/history/valid"] * \
-            np.concatenate([data["other/history/valid"][:, 1:, :],
-            np.zeros((data["other/history/valid"].shape[0], 1, 1))], axis=1))[:, :-1, :]
+        data["history/yaw_sin_diff"] = np.sin(data["history/yaw_diff"])
+        data["history/yaw_cos_diff"] = np.cos(data["history/yaw_diff"])
+        data["history/valid_diff"] = (data["history/valid"] * \
+            np.concatenate([data["history/valid"][:, 1:, :],
+            np.zeros((data["history/valid"].shape[0], 1, 1))], axis=1))[:, :-1, :]
         return data
     
-    def _compute_agent_type_and_is_sdc_ohe(self, data, subject):
+    def _compute_agent_type_and_is_sdc_ohe(self, data):
         I = np.eye(5)
-        agent_type_ohe = I[np.array(data[f"{subject}/agent_type"])]
-        is_sdc = np.array(data[f"{subject}/is_sdc"]).reshape(-1, 1)
-        ohe_data = np.concatenate([agent_type_ohe, is_sdc], axis=-1)[:, None, :]
-        ohe_data = np.repeat(ohe_data, data["target/history/xy"].shape[1], axis=1)
+        agent_type_ohe = I[np.array(data["agent_type"])]
+        is_sdc = np.zeros(agent_type_ohe.shape[0])
+        is_sdc[data["ego_id"]] = 1
+        ohe_data = np.concatenate([agent_type_ohe, is_sdc.reshape(-1, 1)], axis=-1)[:, None, :]
+        ohe_data = np.repeat(ohe_data, data["history/xy"].shape[1], axis=1)
         return ohe_data
     
     def _mask_history(self, ndarray, fraction):
-        assert fraction >=0 and fraction < 1
+        assert fraction >= 0 and fraction < 1
         ndarray = ndarray * (np.random.uniform(size=ndarray.shape) > fraction)
         return ndarray
     
     def _compute_lstm_input_data(self, data):
         keys_to_stack = self._config["lstm_input_data"]
         keys_to_stack_diff = self._config["lstm_input_data_diff"]
-        for subject in ["target", "other"]:
-            agent_type_ohe = self._compute_agent_type_and_is_sdc_ohe(data, subject)
-            data[f"{subject}/history/lstm_data"] = np.concatenate(
-                [data[f"{subject}/history/{k}"] for k in keys_to_stack] + [agent_type_ohe], axis=-1)
-            data[f"{subject}/history/lstm_data"] *= data[f"{subject}/history/valid"]
-            data[f"{subject}/history/lstm_data_diff"] = np.concatenate(
-                [data[f"{subject}/history/{k}_diff"] for k in keys_to_stack_diff] + \
-                    [agent_type_ohe[:, 1:, :]], axis=-1)
-            data[f"{subject}/history/lstm_data_diff"] *= data[f"{subject}/history/valid_diff"]
+        agent_type_ohe = self._compute_agent_type_and_is_sdc_ohe(data)
+        # lstm data
+        data["history/lstm_data"] = np.concatenate(
+            [data[f"history/{k}"] for k in keys_to_stack] + [agent_type_ohe], axis=-1)
+        data["history/lstm_data"] *= data["history/valid"]
+        # lstm data diff
+        data["history/lstm_data_diff"] = np.concatenate(
+            [data[f"history/{k}_diff"] for k in keys_to_stack_diff] + \
+                [agent_type_ohe[:, 1:, :]], axis=-1)
+        data["history/lstm_data_diff"] *= data["history/valid_diff"]
         return data
 
     def _compute_mcg_input_data(self, data):
-        for subject in ["target", "other"]:
-            agent_type_ohe = self._compute_agent_type_and_is_sdc_ohe(data, subject)
-            lstm_input_data = data[f"{subject}/history/lstm_data"]
-            I = np.eye(lstm_input_data.shape[1])[None, ...]
-            timestamp_ohe = np.repeat(I, lstm_input_data.shape[0], axis=0)
-            data[f"{subject}/history/mcg_input_data"] = np.concatenate(
-                [lstm_input_data, timestamp_ohe], axis=-1)
+        agent_type_ohe = self._compute_agent_type_and_is_sdc_ohe(data)
+        lstm_input_data = data["history/lstm_data"]
+        I = np.eye(lstm_input_data.shape[1])[None, ...]
+        timestamp_ohe = np.repeat(I, lstm_input_data.shape[0], axis=0)
+        data["history/mcg_input_data"] = np.concatenate(
+            [lstm_input_data, timestamp_ohe], axis=-1)
         return data
     
     def __getitem__(self, idx):
@@ -198,16 +184,15 @@ class MultiPathPPDataset(Dataset):
             print("Error reading", self._files[idx])
             idx = 0
             np_data = dict(np.load(self._files[0], allow_pickle=True))
+
         np_data["scenario_id"] = np_data["scenario_id"].item()
         np_data["filename"] = self._files[idx]
-        np_data["target/history/yaw"] = angle_to_range(np_data["target/history/yaw"])
-        np_data["other/history/yaw"] = angle_to_range(np_data["other/history/yaw"])
+        np_data["history/yaw"] = angle_to_range(np_data["history/yaw"])
         np_data = self._generate_sin_cos(np_data)
         np_data = self._add_length_width(np_data)
         if self._config["mask_history"]:
-            for subject in ["target", "other"]:
-                np_data[f"{subject}/history/valid"] = self._mask_history(
-                        np_data[f"{subject}/history/valid"], self._config["mask_history_fraction"])
+            np_data["history/valid"] = self._mask_history(
+                np_data["history/valid"], self._config["mask_history_fraction"])
         np_data = self._compute_agent_diff_features(np_data)
         np_data = self._compute_lstm_input_data(np_data)
         np_data = self._compute_mcg_input_data(np_data)
@@ -217,10 +202,10 @@ class MultiPathPPDataset(Dataset):
     def collate_fn(batch):
         batch_keys = batch[0].keys()
         result_dict = {k: [] for k in batch_keys}
-        other_agent_history_scatter_idx = []
         road_network_scatter_idx = []
-        other_agent_history_scatter_numbers = []
         road_network_scatter_numbers = []
+        agent_history_scatter_numbers = []
+        agent_history_scatter_idx = []
         for sample_num, sample in enumerate(batch):
             for k in batch_keys:
                 if not isinstance(sample[k], str) and len(sample[k].shape) == 0:
@@ -230,19 +215,20 @@ class MultiPathPPDataset(Dataset):
                 if k == "road_network_embeddings":
                     road_network_scatter_idx.extend([sample_num] * sample[k].shape[0])
                     road_network_scatter_numbers.append(sample[k].shape[0])
-                if k == "other/history/xy":
-                    other_agent_history_scatter_idx.extend([sample_num] * sample[k].shape[0])
-                    other_agent_history_scatter_numbers.append(sample[k].shape[0])
+                if k == "history/xy":
+                    agent_history_scatter_idx.extend([sample_num] * sample[k].shape[0])
+                    agent_history_scatter_numbers.append(sample[k].shape[0])
+
         for k, v in result_dict.items():
             if not isinstance(v[0], np.ndarray):
                 continue
             result_dict[k] = torch.Tensor(np.concatenate(v, axis=0))
-        result_dict["other_agent_history_scatter_idx"] = torch.Tensor(
-            other_agent_history_scatter_idx).type(torch.long)
+        result_dict["agent_history_scatter_idx"] = torch.Tensor(
+            agent_history_scatter_idx).type(torch.long)
         result_dict["road_network_scatter_idx"] = torch.Tensor(
             road_network_scatter_idx).type(torch.long)
-        result_dict["other_agent_history_scatter_numbers"] = torch.Tensor(
-            other_agent_history_scatter_numbers).type(torch.long)
+        result_dict["agent_history_scatter_numbers"] = torch.Tensor(
+            agent_history_scatter_numbers).type(torch.long)
         result_dict["road_network_scatter_numbers"] = torch.Tensor(
             road_network_scatter_numbers).type(torch.long)
         result_dict["batch_size"] = len(batch)

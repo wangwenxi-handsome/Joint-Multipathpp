@@ -17,7 +17,7 @@ train:
   n_epochs: 120
   validate_every_n_steps: 1000
   max_iterations: 5000001
-  normalize: True
+  normalize: False
   normalize_output: True
   clip_grad_norm: 0.4
   scheduler: True

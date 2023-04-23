@@ -100,7 +100,7 @@ class MultiPathPPRenderer(Renderer):
         for key in ["speed", "bbox_yaw", "valid"]:
             preprocessed_data[f"history/{key}"], preprocessed_data[f"future/{key}"] = \
                 self._split_past_and_future(data, key)
-        # (n_agents, )
+        # (n_agents, 1)
         for key in ["state/id", "state/is_sdc", "state/type", "state/current/width",
                 "state/current/length"]:
             preprocessed_data[key.split('/')[-1]] = data[key]
@@ -204,26 +204,31 @@ class MultiPathPPRenderer(Renderer):
 
         # return scene_data
         scene_data = {
+            # ()
             "ego_id": ego_id,
             "target_id": max(target_id),
-            "shift": current_agent_scene_shift[None, ],
-            "yaw": current_agent_scene_yaw,
             "scenario_id": agent_history_info["scenario_id"].item().decode("utf-8"),
-
+            # (1, )
+            "yaw": current_agent_scene_yaw,
+            # (1, 2)
+            "shift": current_agent_scene_shift[None, ],
+            # (n, )
             "agent_type": agent_history_info["type"].astype(int),
             "agent_id": agent_history_info["id"],
+            # (n, 1)
             "width": agent_history_info["width"],
             "length": agent_history_info["length"],
-
+            # (n, 11, -1)
             "history/xy": current_scene_agents_coordinates_history,
             "history/yaw": current_scene_agents_yaws_history,
             "history/speed": agent_history_info["history/speed"],
             "history/valid": agent_history_info["history/valid"],
+            # (n, 80, -1)
             "future/xy": current_scene_agents_coordinates_future,
             "future/yaw": current_scene_agents_yaws_future,
             "future/speed": agent_history_info["future/speed"],
             "future/valid": agent_history_info["future/valid"],
-
+            # (target_num, 128, 1, -1)
             "road_network_embeddings": road_segments_embeddings,
         }
         return [scene_data]
