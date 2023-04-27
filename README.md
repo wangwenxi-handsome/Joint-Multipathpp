@@ -1,7 +1,7 @@
 # Autonomous driving sim_agent in waymo competition
 Autonomous driving sim_agent in waymo competition
 
-# prenrender
+# Prenrender
 First we need to prepare data for training. The prerender script will convert the original data format into set of .npz files each containing the data for a single target agent. From code folder run
 ```
 python3 prerender/prerender.py \
@@ -10,3 +10,6 @@ python3 prerender/prerender.py \
     --config NCloseSegAndValidAgentRenderer
     --n-jobs 12 \
 ```
+
+# Model
+![image](docs/model.png)
