@@ -18,7 +18,7 @@ train:
   validate_every_n_steps: 1000
   max_iterations: 5000001
   normalize: False
-  normalize_output: True
+  normalize_output: False
   clip_grad_norm: 0.4
   scheduler: True
 
@@ -42,12 +42,6 @@ model:
   multiple_predictions: False
 
   agent_mcg_linear:
-    layers: [24, 32, 64, 128]
-    pre_activation: False
-    pre_batchnorm: False
-    batchnorm: False
-
-  interaction_mcg_linear:
     layers: [24, 32, 64, 128]
     pre_activation: False
     pre_batchnorm: False
@@ -77,30 +71,6 @@ model:
           batchnorm: False
           dropout: False
 
-  interaction_history_encoder:
-    position_lstm_config:
-      input_size: 13
-      hidden_size: 64
-    position_diff_lstm_config:
-      input_size: 11
-      hidden_size: 64
-    position_mcg_config:
-      block:
-        c_bias: True
-        mlp:
-          n_layers: 3
-          n_in: 128
-          n_out: 128
-          bias: True
-          batchnorm: False
-          dropout: False
-      agg_mode: "max"
-      running_mean_mode: "real"
-      alpha: 0.1
-      beta: 0.9
-      n_blocks: 5
-      identity_c_mlp: True
-
   polyline_encoder:
     layers: [27, 32, 64, 128]
     pre_activation: False
@@ -123,23 +93,6 @@ model:
     beta: 0.9
     n_blocks: 5
     identity_c_mlp: True
-
-  interaction_mcg_encoder:
-    block:
-      c_bias: True
-      mlp:
-        n_layers: 3
-        n_in: 256
-        n_out: 256
-        bias: True
-        batchnorm: False
-        dropout: False
-    agg_mode: "max"
-    running_mean_mode: "real"
-    alpha: 0.1
-    beta: 0.9
-    n_blocks: 5
-    identity_c_mlp: False
 
   roadgraph_mcg_encoder:
     block:

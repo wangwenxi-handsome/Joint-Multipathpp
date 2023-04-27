@@ -18,7 +18,7 @@ train:
   validate_every_n_steps: 1000
   max_iterations: 5000001
   normalize: False
-  normalize_output: True
+  normalize_output: False
   clip_grad_norm: 0.4
   scheduler: True
 

@@ -118,13 +118,13 @@ class MCGBlock(nn.Module):
     def forward(
             self, scatter_numbers, scatter_idx, s, c=None, aggregate_batch=True, return_s=False):
         if c is None:
-            assert self._config["identity_c_mlp"], self._config["identity_c_mlp"]
+            assert self._config["identity_c_mlp"]
             c = torch.ones(s.shape[0], 1, self.n_in, requires_grad=True).cuda()
         else:
             assert not self._config["identity_c_mlp"]
-        c = self._repeat_tensor(c, scatter_numbers)
-        assert torch.isfinite(s).all()
-        assert torch.isfinite(c).all()
+            c = self._repeat_tensor(c, scatter_numbers)
+            assert torch.isfinite(s).all()
+            assert torch.isfinite(c).all()
         running_mean_s, running_mean_c = s, c
         for i, cg_block in enumerate(self._blocks, start=1):
             s, c = cg_block(scatter_numbers, running_mean_s, running_mean_c)

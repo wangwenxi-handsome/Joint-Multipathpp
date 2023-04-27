@@ -16,6 +16,7 @@ import glob
 import sys
 import random
 
+# get random seed
 seed = 0
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
@@ -25,6 +26,8 @@ random.seed(seed)
 torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 
+
+# init
 def get_last_file(path):
     list_of_files = glob.glob(f'{path}/*')
     if len(list_of_files) == 0:
@@ -35,12 +38,11 @@ def get_last_file(path):
 def get_git_revision_short_hash():
     return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('ascii').strip()
 
-
 config = get_config(sys.argv[1])
 alias = sys.argv[1].split("/")[-1].split(".")[0]
 try:
     models_path = os.path.join("../models", f"{alias}__{get_git_revision_short_hash()}")
-    os.mkdir(tb_path)
+    # os.mkdir(tb_path)
     os.mkdir(models_path)
 except:
     pass
@@ -65,11 +67,12 @@ model_parameters = filter(lambda p: p.requires_grad, model.parameters())
 params = sum([np.prod(p.size()) for p in model_parameters])
 print("N PARAMS=", params)
 
+# train
 train_losses = []
-
 for epoch in tqdm(range(config["train"]["n_epochs"])):
     pbar = tqdm(dataloader)
     for data in pbar:
+        # train
         model.train()
         optimizer.zero_grad()
         if config["train"]["normalize"]:
@@ -79,25 +82,29 @@ for epoch in tqdm(range(config["train"]["n_epochs"])):
         assert torch.isfinite(coordinates).all()
         assert torch.isfinite(probas).all()
         assert torch.isfinite(covariance_matrices).all()
-        xy_future_gt = data["target/future/xy"]
+
+        # loss and optimizer
+        xy_future_gt = data["future/xy"]
         if config["train"]["normalize_output"]:
             # assert not (config["train"]["normalize_output"] and config["train"]["trainable_cov"])
-            xy_future_gt = (data["target/future/xy"] - torch.Tensor([1.4715e+01, 4.3008e-03]).cuda()) / 10.
+            xy_future_gt = (data["future/xy"] - torch.Tensor([1.4715e+01, 4.3008e-03]).cuda()) / 10.
             assert torch.isfinite(xy_future_gt).all()
+            _coordinates = coordinates.detach() * 10. + torch.Tensor([1.4715e+01, 4.3008e-03]).cuda()
+        else:
+            _coordinates = coordinates.detach()
         loss = nll_with_covariances(
-            xy_future_gt, coordinates, probas, data["target/future/valid"].squeeze(-1),
+            xy_future_gt, coordinates, probas, data["future/valid"].squeeze(-1),
             covariance_matrices) * loss_coeff
         train_losses.append(loss.item())
         loss.backward()
         if "clip_grad_norm" in config["train"]:
             torch.nn.utils.clip_grad_norm_(model.parameters(), config["train"]["clip_grad_norm"])
         optimizer.step()
-        if config["train"]["normalize_output"]:
-            _coordinates = coordinates.detach() * 10. + torch.Tensor([1.4715e+01, 4.3008e-03]).cuda()
-        else:
-            _coordinates = coordinates.detach()
+
+        # log
         if num_steps % 10 == 0:
             pbar.set_description(f"loss = {round(loss.item(), 2)}")
+        # save
         if num_steps % 1000 == 0 and this_num_steps > 0:
             saving_data = {
                 "num_steps": num_steps,
@@ -107,6 +114,7 @@ for epoch in tqdm(range(config["train"]["n_epochs"])):
             if config["train"]["scheduler"]:
                 saving_data["scheduler_state_dict"] = scheduler.state_dict()
             torch.save(saving_data, os.path.join(models_path, f"last.pth"))
+        # validation
         if num_steps % (len(dataloader) // 2) == 0 and this_num_steps > 0:
             del data
             torch.cuda.empty_cache()
@@ -119,10 +127,18 @@ for epoch in tqdm(range(config["train"]["n_epochs"])):
                     if config["train"]["normalize"]:
                         data = normalize(data, config)
                     dict_to_cuda(data)
-                    probas, coordinates, _, _ = model(data, num_steps)
+                    probas, coordinates, covariance_matrices, loss_coeff = model(data, num_steps)
                     if config["train"]["normalize_output"]:
+                        xy_future_gt = (data["future/xy"] - torch.Tensor([1.4715e+01, 4.3008e-03]).cuda()) / 10.
+                        assert torch.isfinite(xy_future_gt).all()
                         coordinates = coordinates * 10. + torch.Tensor([1.4715e+01, 4.3008e-03]).cuda()
+                    loss = nll_with_covariances(
+                        xy_future_gt, coordinates, probas, data["future/valid"].squeeze(-1),
+                        covariance_matrices) * loss_coeff
+                    losses.append(loss.item())
+                pbar.set_description(f"validation loss = {round(sum(losses) / len(losses), 2)}")
                 train_losses = []
+            
             saving_data = {
                 "num_steps": num_steps,
                 "model_state_dict": model.state_dict(),
@@ -131,6 +147,7 @@ for epoch in tqdm(range(config["train"]["n_epochs"])):
             if config["train"]["scheduler"]:
                 saving_data["scheduler_state_dict"] = scheduler.state_dict()
             torch.save(saving_data, os.path.join(models_path, f"{num_steps}.pth"))
+
         num_steps += 1
         this_num_steps += 1
         if "max_iterations" in config["train"] and num_steps > config["train"]["max_iterations"]:

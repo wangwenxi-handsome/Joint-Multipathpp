@@ -1,49 +1,100 @@
-from abc import ABC, abstractmethod
 import numpy as np
-from .utils import (
-    filter_valid, get_filter_valid_roadnetwork_keys, get_filter_valid_anget_history,
-    get_normalize_data)
 
 
-class Renderer(ABC):
-    @abstractmethod
+class Renderer:
     def render(self, data):
         pass
+    
+    @staticmethod
+    def filter_valid(item, valid_array):
+        return item[valid_array.flatten() > 0]
+
+    @staticmethod
+    def get_filter_valid_roadnetwork_keys():
+        filter_valid_roadnetwork = [
+            "roadgraph_samples/xyz", "roadgraph_samples/id", "roadgraph_samples/type",
+            "roadgraph_samples/valid", "roadgraph_samples/dir"]
+        return filter_valid_roadnetwork
+
+    @staticmethod
+    def get_filter_valid_anget_history():
+        result = []
+        key_with_different_timezones = ["x", "y", "speed", "bbox_yaw", "valid"]
+        common_keys = [
+            "state/id", "state/is_sdc", "state/type", "state/current/width", "state/current/length"]
+        for key in key_with_different_timezones:
+            for zone in ["past", "current", "future"]:
+                result.append(f"state/{zone}/{key}")
+        result.extend(common_keys)
+        return result
 
 
 class SegmentFilteringPolicy:
     def __init__(self, config):
         self._config = config
 
-    def _select_n_closest_segments(self, position, segments, types):
-        distances = np.linalg.norm(segments - position[None, None, :], axis=-1).min(axis=-1)
+    def _select_n_closest_segments(self, segments, types):
+        distances = np.linalg.norm(segments, axis=-1).min(axis=-1)
         n_closest_segments_ids = np.argpartition(
             distances, self._config["n_closest_segments"])[:self._config["n_closest_segments"]]
         return segments[n_closest_segments_ids], types[n_closest_segments_ids].flatten()
+
+    def _select_segments_within_radius(self, segments, types):
+        distances = np.linalg.norm(segments, axis=-1).min(axis=-1)
+        closest_segments_selector = distances < self._config["segments_filtering_radius"]
+        return segments[closest_segments_selector], types[closest_segments_selector].flatten()
     
-    def filter(self, position, segments, types):
+    def filter(self, segments, types):
         if self._config["policy"] == "n_closest_segments":
-            return self._select_n_closest_segments(position, segments, types)
+            return self._select_n_closest_segments(segments, types)
+        if self._config["policy"] == "within_radius":
+            return self._select_segments_within_radius(segments, types)
         raise Exception(f"Unknown segment filtering policy {self._config['policy'] }")
 
 
-class MultiPathPPRenderer(Renderer):
+class AgentFilteringPolicy:
+    def __init__(self, config):
+        self._config = config
+
+    def _get_target_agents(self, data):
+        return data["state/tracks_to_predict"] > 0 or data["state/is_sdc"] == 1
+    
+    def _get_current_available_agents(self, data):
+        return np.squeeze(data["state/current/valid"]) > 0
+    
+    def filter(self, data):
+        # Returns np.array of shape [N], which represents seleted agent.
+        target_valid = self._get_target_agents(data)
+        target_num = np.sum(target_valid)
+        assert target_num <= self._config["max_agent_num"]
+        current_available_valid = self._get_current_available_agents(data)
+
+        # the more available history trajectory, the more available information
+        sorted_agent = np.argsort(np.sum(-data["state/past/valid"], axis=-1))
+        i = 0
+        while(target_num < self._config["max_agent_num"]):
+            if (current_available_valid[sorted_agent[i]] and ~target_valid[sorted_agent[i]]):
+                i += 1
+                target_valid[sorted_agent[i]] = True
+        return target_valid
+
+
+class SegmentAndAgentSequenceRender(Renderer):
     def __init__(self, config):
         self._config = config
         self.n_segment_types = 21
         self._segment_filter = SegmentFilteringPolicy(self._config["segment_filtering"])
-    
-    def _select_agents_with_any_validity(self, data):
-        return data["state/current/valid"].sum(axis=-1) + \
-            data["state/future/valid"].sum(axis=-1) + data["state/past/valid"].sum(axis=-1)
+        self._agent_filter = AgentFilteringPolicy(self._config["agent_filtering"])
     
     def _preprocess_data(self, data):
+        # get valid roadnetwork
         valid_roadnetwork_selector = data["roadgraph_samples/valid"]
-        for key in get_filter_valid_roadnetwork_keys():
-            data[key] = filter_valid(data[key], valid_roadnetwork_selector)
-        agents_with_any_validity_selector = self._select_agents_with_any_validity(data)
-        for key in get_filter_valid_anget_history():
-            data[key] = filter_valid(data[key], agents_with_any_validity_selector)
+        for key in Renderer.get_filter_valid_roadnetwork_keys():
+            data[key] = Renderer.filter_valid(data[key], valid_roadnetwork_selector)
+        # get valid  agent
+        agents_with_any_validity_selector = self._agent_filter.filter(data)
+        for key in Renderer.get_filter_valid_anget_history():
+            data[key] = Renderer.filter_valid(data[key], agents_with_any_validity_selector)
 
     def _prepare_roadnetwork_info(self, data):
         # Returns np.array of shape [N, 2, 2]
@@ -100,10 +151,11 @@ class MultiPathPPRenderer(Renderer):
         for key in ["speed", "bbox_yaw", "valid"]:
             preprocessed_data[f"history/{key}"], preprocessed_data[f"future/{key}"] = \
                 self._split_past_and_future(data, key)
-        # (n_agents, 1)
+        # (n_agents,) and (n_agents, 1)
         for key in ["state/id", "state/is_sdc", "state/type", "state/current/width",
                 "state/current/length"]:
             preprocessed_data[key.split('/')[-1]] = data[key]
+        # string
         preprocessed_data["scenario_id"] = data["scenario/id"]
         return preprocessed_data
     
@@ -166,6 +218,10 @@ class MultiPathPPRenderer(Renderer):
 
         # get ego coordinate
         ego_id = np.where(data["state/is_sdc"] == 1)[0][0]
+        target_id = list(np.where(data["state/tracks_to_predict"] == 1)[0])
+        # check agent order is [target_agent, ego, other_agent]
+        assert target_id == list(range(max(target_id) + 1))
+        assert max(target_id) == ego_id or max(target_id) == ego_id - 1
         current_agent_scene_shift = agent_history_info["history/xy"][ego_id][-1]
         current_agent_scene_yaw = agent_history_info["history/bbox_yaw"][ego_id][-1]
 
@@ -184,9 +240,7 @@ class MultiPathPPRenderer(Renderer):
             road_network_info["segments"], current_agent_scene_shift, current_agent_scene_yaw)
 
         road_segments_embeddings = []
-        target_id = list(np.where(data["state/tracks_to_predict"] == 1)[0])
-        assert target_id == list(range(max(target_id) + 1))
-        for i in target_id:
+        for i in range(len(agent_history_info["history/xy"])):
             target_road_network_coordinates, target_road_network_types = \
                 self._filter_closest_segments(
                     current_scene_agents_coordinates_history[i][-1], 
@@ -204,7 +258,7 @@ class MultiPathPPRenderer(Renderer):
 
         # return scene_data
         scene_data = {
-            # ()
+            # int and string
             "ego_id": ego_id,
             "target_id": max(target_id),
             "scenario_id": agent_history_info["scenario_id"].item().decode("utf-8"),
@@ -228,7 +282,7 @@ class MultiPathPPRenderer(Renderer):
             "future/yaw": current_scene_agents_yaws_future,
             "future/speed": agent_history_info["future/speed"],
             "future/valid": agent_history_info["future/valid"],
-            # (target_num, 128, 1, -1)
+            # (max_agent_num, 128, 1, -1)
             "road_network_embeddings": road_segments_embeddings,
         }
         return [scene_data]
