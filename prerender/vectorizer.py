@@ -91,7 +91,7 @@ class SegmentAndAgentSequenceRender(Renderer):
         valid_roadnetwork_selector = data["roadgraph_samples/valid"]
         for key in Renderer.get_filter_valid_roadnetwork_keys():
             data[key] = Renderer.filter_valid(data[key], valid_roadnetwork_selector)
-        # get valid  agent
+        # get valid agent
         agents_with_any_validity_selector = self._agent_filter.filter(data)
         for key in Renderer.get_filter_valid_anget_history():
             data[key] = Renderer.filter_valid(data[key], agents_with_any_validity_selector)

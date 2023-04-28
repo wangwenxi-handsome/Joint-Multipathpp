@@ -7,19 +7,6 @@ def angle_to_range(yaw):
     yaw = (yaw - np.pi) % (2 * np.pi) - np.pi
     return yaw
 
-def dict_to_cuda(d):
-    passing_keys = set([
-                    'history/lstm_data', 'history/lstm_data_diff',
-                    'history/mcg_input_data', 'history/mcg_input_data',
-                    'batch_size', 'future/xy', 'future/valid'])
-    for k in d.keys():
-        if k not in passing_keys:
-            continue
-        v = d[k]
-        if not isinstance(v, torch.Tensor):
-            continue
-        d[k] = d[k].cuda()
-
 class SegmentAndAgentSequenceDataset(Dataset):
     def __init__(self, config):
         self._data_path = config["data_path"]

@@ -10,6 +10,7 @@ python3 prerender/prerender.py \
     --config NCloseSegAndValidAgentRenderer
     --n-jobs 12 \
 ```
+The prerender module is completely self-contained.
 
 # Model
 ## Encoder
