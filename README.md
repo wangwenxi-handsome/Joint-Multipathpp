@@ -12,4 +12,5 @@ python3 prerender/prerender.py \
 ```
 
 # Model
-![image](docs/model.png)
+## Encoder
+![image](docs/encoder.jpg)
