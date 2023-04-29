@@ -47,17 +47,11 @@ class NormalMLP(nn.Module):
         self._mlp = nn.ModuleList(modules)
 
     def forward(self, x):
-        tmp = []
-        prev_x_shape = x.shape
         assert torch.isfinite(x).all()
-        tmp.append(x)
         for l in self._mlp:
             x = l(x)
-            tmp.append(x)
             assert torch.isfinite(x).all()
         return x
-        output = self._mlp(x)
-        return output
             
 
 class CGBlock(nn.Module):
@@ -69,7 +63,7 @@ class CGBlock(nn.Module):
         self.n_in = self.s_mlp.n_in
         self.n_out = self.s_mlp.n_out
 
-    def forward(self, scatter_numbers, s, c):
+    def forward(self, s, c):
         prev_s_shape, prev_c_shape = s.shape, c.shape
         s = self.s_mlp(s.view(-1, s.shape[-1])).view(prev_s_shape)
         c = self.c_mlp(c.view(-1, c.shape[-1])).view(prev_c_shape)
@@ -99,13 +93,14 @@ class MCGBlock(nn.Module):
         self._blocks = nn.ModuleList(self._blocks)
         self.n_in = self._blocks[0].n_in
         self.n_out = self._blocks[-1].n_out
-    
-    def _repeat_tensor(self, tensor, scatter_numbers, axis=0):
-        result = []
-        for i in range(len(scatter_numbers)):
-            result.append(tensor[[i]].expand((int(scatter_numbers[i]), -1, -1)))
-        result = torch.cat(result, axis=0)
-        return result
+
+    def _check_sc_valid(self, s, c):
+        # s is [..., n, d], c is [..., 1, d]
+        assert s.shape[: -2] == c.shape[: -2]
+        assert s.shape[-1] == c.shape[-1]
+        assert c.shape[-2] == 1
+        assert torch.isfinite(s).all()
+        assert torch.isfinite(c).all()
 
     def _compute_running_mean(self, prevoius_mean, new_value, i):
         if self._config["running_mean_mode"] == "real":
@@ -115,19 +110,19 @@ class MCGBlock(nn.Module):
             result = self._config["alpha"] * prevoius_mean + self._config["beta"] * new_value
         return result
 
-    def forward(
-            self, scatter_numbers, scatter_idx, s, c=None, aggregate_batch=True, return_s=False):
+    def forward(self, s, c=None, return_s=False):
         if c is None:
             assert self._config["identity_c_mlp"]
-            c = torch.ones(s.shape[0], 1, self.n_in, requires_grad=True).cuda()
+            c = torch.ones(*s.shape[: -2], 1, s.shape[-1], requires_grad=True).cuda()
         else:
             assert not self._config["identity_c_mlp"]
-            c = self._repeat_tensor(c, scatter_numbers)
-            assert torch.isfinite(s).all()
-            assert torch.isfinite(c).all()
+            if len(c.shape) < len(s.shape):
+                c = c.unsqueeze(-2)
+        self._check_sc_valid(s, c)
+
         running_mean_s, running_mean_c = s, c
         for i, cg_block in enumerate(self._blocks, start=1):
-            s, c = cg_block(scatter_numbers, running_mean_s, running_mean_c)
+            s, c = cg_block(running_mean_s, running_mean_c)
             assert torch.isfinite(s).all()
             assert torch.isfinite(c).all()
             running_mean_s = self._compute_running_mean(running_mean_s, s, i)
@@ -135,10 +130,9 @@ class MCGBlock(nn.Module):
             assert torch.isfinite(running_mean_s).all()
             assert torch.isfinite(running_mean_c).all()
         if return_s:
-            return running_mean_s 
-        if aggregate_batch:
-            return scatter_max(running_mean_c, scatter_idx, dim=0)[0]
-        return running_mean_c
+            return running_mean_s
+        else:
+            return running_mean_c.squeeze()
 
 
 class Decoder(nn.Module):
@@ -167,7 +161,7 @@ class Decoder(nn.Module):
         assert torch.isfinite(trajectories_embeddings).all()
         if self._return_embedding:
             return trajectories_embeddings
-        # 
+
         res = self._mlp_decoder(trajectories_embeddings)
         coordinates = res[:, :, :80 * 2].reshape(
             batch_size, self._config["n_trajectories"], 80, 2)
@@ -206,7 +200,7 @@ class DecoderHandler(nn.Module):
         self._decoders = nn.ModuleList([
             Decoder(config["decoder_config"]) for _ in range(self._n_decoders)])
     
-    def forward(self, target_scatter_numbers, target_scatter_idx, final_embedding, batch_size):
+    def forward(self, final_embedding, batch_size):
         stacked_probas, stacked_coordinates, stacked_covariance_matrices = [], [], []
         stacked_embeddings = []
         random_head_selector = np.random.uniform(low=0.0, high=1.0, size=self._n_decoders)
@@ -219,14 +213,14 @@ class DecoderHandler(nn.Module):
         if self._return_embedding:
             for coeff, decoder in zip(random_head_selector, self._decoders):
                 embeddings = decoder(
-                    target_scatter_numbers, target_scatter_idx, final_embedding, batch_size)
+                    final_embedding, batch_size)
                 stacked_embeddings.append(embeddings)
             stacked_embeddings = torch.cat(stacked_embeddings, dim=1)
             return stacked_embeddings, self._n_decoders / random_head_selector.sum()
         else:
             for coeff, decoder in zip(random_head_selector, self._decoders):
                 probas, coordinates, covariance_matrices = decoder(
-                    target_scatter_numbers, target_scatter_idx, final_embedding, batch_size)
+                    final_embedding, batch_size)
                 probas, coordinates, covariance_matrices = [
                     coeff * x + (1 - coeff) * x.detach() for x in [
                         probas, coordinates, covariance_matrices]]
@@ -321,11 +315,10 @@ class HistoryEncoder(nn.Module):
         self._position_diff_lstm = nn.LSTM(batch_first=True, **config["position_diff_lstm_config"])
         self._position_mcg = MCGBlock(config["position_mcg_config"])
 
-    def forward(self, scatter_numbers, scatter_idx, lstm_data, lstm_data_diff, mcg_data):
+    def forward(self, lstm_data, lstm_data_diff, mcg_data):
         position_lstm_embedding = self._position_lstm(lstm_data)[0][:, -1:, :]
         position_diff_lstm_embedding = self._position_diff_lstm(lstm_data_diff)[0][:, -1:, :]
-        position_mcg_embedding = self._position_mcg(
-            scatter_numbers, scatter_idx, mcg_data, aggregate_batch=False)
+        position_mcg_embedding = self._position_mcg(mcg_data, return_s=False)
         return torch.cat([
             position_lstm_embedding, position_diff_lstm_embedding, position_mcg_embedding], axis=-1)
 
@@ -343,8 +336,6 @@ class MHA(nn.Module):
     
     def forward(self, traj_embeddings):
         batch_size = traj_embeddings.shape[0]
-        target_scatter_numbers = torch.ones(batch_size, dtype=torch.long).cuda()
-        target_scatter_idx = torch.arange(batch_size, dtype=torch.long).cuda()
         Q = self._q(traj_embeddings)
         K = self._k(traj_embeddings)
         V = self._v(traj_embeddings)

@@ -1,5 +1,3 @@
-alias: "single"
-
 train:
   data_config:
     dataset_config:
@@ -38,8 +36,6 @@ val:
 model:
   n_trajectories: 6
   size: 640
-  make_em: False
-  multiple_predictions: False
 
   agent_mcg_linear:
     layers: [24, 32, 64, 128]
@@ -71,13 +67,15 @@ model:
           batchnorm: False
           dropout: False
 
-  polyline_encoder:
-    layers: [27, 32, 64, 128]
-    pre_activation: False
-    pre_batchnorm: False
+  agent_info_linear:
+    n_layers: 3
+    n_in: 256
+    n_out: 256
+    bias: True
     batchnorm: False
+    dropout: False
 
-  history_mcg_encoder:
+  interaction_mcg_encoder:
     block:
       c_bias: True
       mlp:
@@ -92,7 +90,19 @@ model:
     alpha: 0.1
     beta: 0.9
     n_blocks: 5
-    identity_c_mlp: True
+    identity_c_mlp: False
+
+  agent_intention_linear:
+    layers: [512, 256, 128]
+    pre_activation: True
+    pre_batchnorm: False
+    batchnorm: False
+
+  polyline_encoder:
+    layers: [31, 32, 64, 128]
+    pre_activation: False
+    pre_batchnorm: False
+    batchnorm: False
 
   roadgraph_mcg_encoder:
     block:
@@ -111,11 +121,30 @@ model:
     n_blocks: 5
     identity_c_mlp: False
 
-  agent_and_interaction_linear:
-    layers: [512, 256, 128]
-    pre_activation: True
-    pre_batchnorm: False
+  agent_linear:
+    n_layers: 3
+    n_in: 128
+    n_out: 128
+    bias: True
     batchnorm: False
+    dropout: False
+
+  agent_mcg_encoder:
+    block:
+      c_bias: True
+      mlp:
+        n_layers: 3
+        n_in: 128
+        n_out: 128
+        bias: True
+        batchnorm: False
+        dropout: False
+    agg_mode: "max"
+    running_mean_mode: "real"
+    alpha: 0.1
+    beta: 0.9
+    n_blocks: 5
+    identity_c_mlp: False
 
   decoder_handler_config:
     n_decoders: 1
@@ -172,5 +201,3 @@ model:
       pre_activation: True
       pre_batchnorm: False
       batchnorm: False
-
-  mha_decoder: True
