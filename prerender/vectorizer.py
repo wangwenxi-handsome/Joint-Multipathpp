@@ -33,23 +33,15 @@ class SegmentFilteringPolicy:
     def __init__(self, config):
         self._config = config
 
-    def _select_n_closest_segments(self, segments, types):
-        distances = np.linalg.norm(segments, axis=-1).min(axis=-1)
+    def _select_n_closest_segments(self, position, segments, types):
+        distances = np.linalg.norm(segments - position[None, None, :], axis=-1).min(axis=-1)
+        select_num = min(self._config["n_closest_segments"], len(segments))
         n_closest_segments_ids = np.argpartition(
-            distances, self._config["n_closest_segments"])[:self._config["n_closest_segments"]]
-        return segments[n_closest_segments_ids], types[n_closest_segments_ids].flatten()
-
-    def _select_segments_within_radius(self, segments, types):
-        distances = np.linalg.norm(segments, axis=-1).min(axis=-1)
-        closest_segments_selector = distances < self._config["segments_filtering_radius"]
-        return segments[closest_segments_selector], types[closest_segments_selector].flatten()
+            distances, select_num - 1)[: select_num]
+        return segments[n_closest_segments_ids], types[n_closest_segments_ids].flatten(), 
     
-    def filter(self, segments, types):
-        if self._config["policy"] == "n_closest_segments":
-            return self._select_n_closest_segments(segments, types)
-        if self._config["policy"] == "within_radius":
-            return self._select_segments_within_radius(segments, types)
-        raise Exception(f"Unknown segment filtering policy {self._config['policy'] }")
+    def filter(self, position, segments, types):
+        return self._select_n_closest_segments(position, segments, types)
 
 
 class AgentFilteringPolicy:
@@ -57,7 +49,7 @@ class AgentFilteringPolicy:
         self._config = config
 
     def _get_target_agents(self, data):
-        return data["state/tracks_to_predict"] > 0 or data["state/is_sdc"] == 1
+        return ((data["state/tracks_to_predict"] > 0) + (data["state/is_sdc"] == 1)) > 0
     
     def _get_current_available_agents(self, data):
         return np.squeeze(data["state/current/valid"]) > 0
@@ -72,29 +64,45 @@ class AgentFilteringPolicy:
         # the more available history trajectory, the more available information
         sorted_agent = np.argsort(np.sum(-data["state/past/valid"], axis=-1))
         i = 0
-        while(target_num < self._config["max_agent_num"]):
+        while(target_num < self._config["max_agent_num"] and i < len(target_valid)):
             if (current_available_valid[sorted_agent[i]] and ~target_valid[sorted_agent[i]]):
-                i += 1
+                target_num += 1
                 target_valid[sorted_agent[i]] = True
-        return target_valid
+            i += 1
+
+        # compute agent_valid, if agent_valid is False, the agent is not considered even if it is valid in some timestamps.
+        if target_num == self._config["max_agent_num"]:
+            agent_valid = np.ones(self._config["max_agent_num"]) == 1
+            return target_valid, agent_valid
+        else:
+            # padding to max agent_num, because there no enough current_available_valid agents.
+            agent_valid = []
+            for i in range(len(target_valid)):
+                if target_valid[i]:
+                    agent_valid.append(True)
+                elif(target_num < self._config["max_agent_num"]):
+                    agent_valid.append(False)
+                    target_num += 1
+            return target_valid, np.array(agent_valid)
 
 
 class SegmentAndAgentSequenceRender(Renderer):
     def __init__(self, config):
         self._config = config
         self.n_segment_types = 21
-        self._segment_filter = SegmentFilteringPolicy(self._config["segment_filtering"])
-        self._agent_filter = AgentFilteringPolicy(self._config["agent_filtering"])
+        self._segment_filter = SegmentFilteringPolicy(self._config)
+        self._agent_filter = AgentFilteringPolicy(self._config)
     
     def _preprocess_data(self, data):
         # get valid roadnetwork
         valid_roadnetwork_selector = data["roadgraph_samples/valid"]
         for key in Renderer.get_filter_valid_roadnetwork_keys():
             data[key] = Renderer.filter_valid(data[key], valid_roadnetwork_selector)
-        # get valid  agent
-        agents_with_any_validity_selector = self._agent_filter.filter(data)
+        # get selected agents which are padding to max_agent_num, agent_valid means if the agent is padded.
+        agents_with_any_validity_selector, agent_valid = self._agent_filter.filter(data)
         for key in Renderer.get_filter_valid_anget_history():
             data[key] = Renderer.filter_valid(data[key], agents_with_any_validity_selector)
+        return agent_valid
 
     def _prepare_roadnetwork_info(self, data):
         # Returns np.array of shape [N, 2, 2]
@@ -209,10 +217,10 @@ class SegmentAndAgentSequenceRender(Renderer):
             np.tile(position, (segments.shape[0], 1)), np.tile(yaw, (segments.shape[0], 1)), 
             r_norm, r_unit_vector, segment_unit_vector, segment_end_minus_start_norm, 
             segment_end_minus_r_norm, segment_type_ohe], axis=-1)
-        return resulting_embeddings[:, None, :]
+        return resulting_embeddings
 
     def render(self, data):
-        self._preprocess_data(data)
+        agent_valid = self._preprocess_data(data)
         road_network_info = self._prepare_roadnetwork_info(data)
         agent_history_info = self._prepare_agent_history(data)
 
@@ -238,7 +246,7 @@ class SegmentAndAgentSequenceRender(Renderer):
         # compute related polylines of target agents
         current_scene_road_network_coordinates = self._transfrom_to_agent_coordinate_system(
             road_network_info["segments"], current_agent_scene_shift, current_agent_scene_yaw)
-
+        road_segments_valid = []
         road_segments_embeddings = []
         for i in range(len(agent_history_info["history/xy"])):
             target_road_network_coordinates, target_road_network_types = \
@@ -253,6 +261,18 @@ class SegmentAndAgentSequenceRender(Renderer):
                 target_road_network_coordinates, 
                 target_road_network_types
             )
+
+            # padding to n_closest_segments
+            target_road_segments_valid = np.ones(self._config["n_closest_segments"]) == 1
+            if len(target_road_segments_embeddings) < self._config["n_closest_segments"]:
+                target_road_segments_valid[len(target_road_segments_embeddings): ] = False
+                target_road_segments_embeddings = np.concatenate([
+                    target_road_segments_embeddings,
+                    np.zeros((
+                        self._config["n_closest_segments"] - len(target_road_segments_embeddings),
+                        target_road_segments_embeddings.shape[-1]))
+                ], axis=0)
+            road_segments_valid.append(target_road_segments_valid)
             road_segments_embeddings.append(target_road_segments_embeddings)
         road_segments_embeddings = np.stack(road_segments_embeddings, axis = 0)
 
@@ -269,6 +289,7 @@ class SegmentAndAgentSequenceRender(Renderer):
             # (n, )
             "agent_type": agent_history_info["type"].astype(int),
             "agent_id": agent_history_info["id"],
+            "agent_valid": agent_valid,
             # (n, 1)
             "width": agent_history_info["width"],
             "length": agent_history_info["length"],
@@ -282,7 +303,7 @@ class SegmentAndAgentSequenceRender(Renderer):
             "future/yaw": current_scene_agents_yaws_future,
             "future/speed": agent_history_info["future/speed"],
             "future/valid": agent_history_info["future/valid"],
-            # (max_agent_num, 128, 1, -1)
+            # (max_agent_num, 128, -1)
             "road_network_embeddings": road_segments_embeddings,
         }
-        return [scene_data]
+        return scene_data

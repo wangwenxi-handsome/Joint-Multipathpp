@@ -1,16 +1,10 @@
-from prerender.vectorizer import SegmentAndAgentSequenceRender
+from vectorizer import SegmentAndAgentSequenceRender
 
 
 NCloseSegAndValidAgentRenderer = {
     "class": SegmentAndAgentSequenceRender,
-    "normalize": False,
-    "segment_filtering": {
-        "policy": "n_closest_segments",
-        "n_closest_segments": 128,
-    },
-    "agent_filtering": {
-        "max_agent_num": 32,
-    },
+    "n_closest_segments": 128,
+    "max_agent_num": 32,
     "drop_segments": 6,
 }
 
