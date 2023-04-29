@@ -1,5 +1,4 @@
 import os
-import sys
 import argparse
 import torch
 from torch import nn
@@ -9,18 +8,16 @@ import numpy as np
 from tqdm import tqdm
 from model.modules import MLP, CGBlock, MCGBlock, HistoryEncoder
 from model.multipathpp import MultiPathPP
-from model.data import get_dataloader, dict_to_cuda, normalize
+from model.data import get_dataloader
 from model.losses import pytorch_neg_multi_log_likelihood_batch, nll_with_covariances
-from prerender.utils.utils import data_to_numpy, get_config
-import subprocess
 from matplotlib import pyplot as plt
-from utils.utils import set_random_seed, get_last_file, get_git_revision_short_hash, dict_to_cuda
+from utils.utils import set_random_seed, get_last_file, get_git_revision_short_hash, dict_to_cuda, get_yaml_config
 
 
 def train(args):
     # init
     set_random_seed(42)
-    config = get_config(args.config)
+    config = get_yaml_config()
     models_path = os.path.join("models", get_git_revision_short_hash())
     if(~os.path.exists(models_path)):
         os.mkdir(models_path)

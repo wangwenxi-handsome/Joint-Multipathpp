@@ -14,7 +14,7 @@ class MultiPathPP(nn.Module):
         self._polyline_encoder = NormalMLP(config["polyline_encoder"])
         self._roadgraph_mcg_encoder = MCGBlock(config["roadgraph_mcg_encoder"])
         self._agent_linear = MLP(config["agent_linear"])
-        self._agent_mcg_encoder = MCGBlock(config["agent_mcg_encoder"])
+        # self._agent_mcg_encoder = MCGBlock(config["agent_mcg_encoder"])
         self._decoder_handler = DecoderHandler(config["decoder_handler_config"])
     
     def forward(self, data, num_steps):
@@ -47,16 +47,16 @@ class MultiPathPP(nn.Module):
         roadgraph_mcg_embedding = self._roadgraph_mcg_encoder(
             segment_embeddings, agent_intention_embedding, return_s=False)
         assert torch.isfinite(roadgraph_mcg_embedding).all()
-        # agent_embedding is [b, n, 256]
+        # agent_embedding is [b, n, 512]
         agent_embedding = torch.cat(
-            [agent_intention_embedding, roadgraph_mcg_embedding], dim=-1)
+            [agents_info_embeddings, agent_intention_embedding, roadgraph_mcg_embedding], dim=-1)
         agent_embedding = self._agent_linear(agent_embedding)
-        agent_embedding = self._agent_mcg_encoder(agent_embedding, return_s=False)
+        # agent_embedding = self._agent_mcg_encoder(agent_embedding, return_s=False)
         assert torch.isfinite(agent_embedding).all()
 
         # Decoder
         probas, coordinates, covariance_matrices, loss_coeff = self._decoder_handler(agent_embedding)
-        assert probas.shape[2] == coordinates.shape[2] == covariance_matrices.shape[2] == 6
+        assert probas.shape[2] == coordinates.shape[2] == covariance_matrices.shape[2] == self._config["n_trajectories"]
         assert torch.isfinite(probas).all()
         assert torch.isfinite(coordinates).all()
         assert torch.isfinite(covariance_matrices).all()

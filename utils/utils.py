@@ -4,6 +4,8 @@ import random
 import subprocess
 import torch
 import numpy as np
+import yaml
+from yaml import Loader
 
 
 def set_random_seed(seed = 42):
@@ -41,3 +43,9 @@ def dict_to_cuda(d):
         if not isinstance(v, torch.Tensor):
             continue
         d[k] = d[k].cuda()
+
+
+def get_yaml_config(path):
+    with open(path, 'r') as stream:
+        config = yaml.load(stream, Loader)
+    return config

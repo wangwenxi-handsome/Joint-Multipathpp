@@ -155,15 +155,15 @@ class Decoder(nn.Module):
     def forward(self, final_embedding):
         assert torch.isfinite(self._learned_anchor_embeddings).all()
         assert torch.isfinite(final_embedding).all()
-        # trajectories_embeddings is [b, n, 6, 128]
-        # s is [b, n, 6, 128], c is [b, n, 128]
+        # trajectories_embeddings is [b, n, 6, 512]
+        # s is [b, n, 6, 512], c is [b, n, 512]
         trajectories_embeddings = self._mcg_predictor(
             self._learned_anchor_embeddings.repeat(*final_embedding.shape[: 2], 1, 1),
             final_embedding, return_s=True)
         assert torch.isfinite(trajectories_embeddings).all()
         if self._return_embedding:
             return trajectories_embeddings
-
+        # res is [b, n, 6, 401]
         res = self._mlp_decoder(trajectories_embeddings)
         coordinates = res[:, :, :, :80 * 2].reshape(
             *final_embedding.shape[: 2], self._config["n_trajectories"], 80, 2)
@@ -180,7 +180,6 @@ class Decoder(nn.Module):
         probas = res[:, :, :, -1]
         assert torch.isfinite(probas).all()
 
-        # TODO(wangwenxi)
         if self._config["trainable_cov"]:
             # http://www.inference.org.uk/mackay/covariance.pdf
             covariance_matrices = (torch.cat([
@@ -192,6 +191,10 @@ class Decoder(nn.Module):
             _zeros, _ones = torch.zeros_like(a), torch.ones_like(a)
             covariance_matrices = torch.cat([_ones, _zeros, _zeros, _ones], axis=-1).reshape(
                 coordinates.shape[0], coordinates.shape[1], coordinates.shape[2], 2, 2)
+            
+        # probas is [b, n, 6]
+        # coordinates is [b, n, 6, 160]
+        # covariance_matrices is [b, n, 6, 2, 2]
         return probas, coordinates, covariance_matrices
 
 
@@ -207,13 +210,12 @@ class DecoderHandler(nn.Module):
     def forward(self, final_embedding):
         stacked_probas, stacked_coordinates, stacked_covariance_matrices = [], [], []
         stacked_embeddings = []
-        random_head_selector = np.random.uniform(low=0.0, high=1.0, size=self._n_decoders)
-        random_head_selector = np.ones_like(random_head_selector) * (random_head_selector > 0.5)
         if self._n_decoders == 1:
             random_head_selector = np.array([1.0])
         while random_head_selector.sum() == 0:
             random_head_selector = np.random.uniform(low=0.0, high=1.0, size=self._n_decoders)
             random_head_selector = np.ones_like(random_head_selector) * (random_head_selector > 0.5)
+
         if self._return_embedding:
             for coeff, decoder in zip(random_head_selector, self._decoders):
                 embeddings = decoder(final_embedding)

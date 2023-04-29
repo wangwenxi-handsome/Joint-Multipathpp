@@ -34,7 +34,7 @@ val:
 
 model:
   n_trajectories: 6
-  size: 640
+  size: 512
 
   agent_mcg_linear:
     layers: [24, 32, 64, 128]
@@ -122,8 +122,8 @@ model:
 
   agent_linear:
     n_layers: 3
-    n_in: 256
-    n_out: 256
+    n_in: 512
+    n_out: 512
     bias: True
     batchnorm: False
     dropout: False
@@ -150,15 +150,15 @@ model:
     return_embedding: False
     decoder_config:
       trainable_cov: True
-      size: 640
+      size: 512
       n_trajectories: 6
       mcg_predictor:
         block:
           c_bias: True
           mlp:
             n_layers: 3
-            n_in: 640
-            n_out: 640
+            n_in: 512
+            n_out: 512
             bias: True
             batchnorm: False
             dropout: False
@@ -169,14 +169,14 @@ model:
         n_blocks: 5
         identity_c_mlp: False
       DECODER:
-        layers: [640, 512, 401]
+        layers: [512, 512, 401]
         pre_activation: True
         pre_batchnorm: False
         batchnorm: False
 
   final_decoder:
     trainable_cov: True
-    size: 640
+    size: 512
     return_embedding: False
     n_trajectories: 6
     mcg_predictor:
@@ -184,8 +184,8 @@ model:
         c_bias: True
         mlp:
           n_layers: 3
-          n_in: 640
-          n_out: 640
+          n_in: 512
+          n_out: 512
           bias: True
           batchnorm: False
           dropout: False
@@ -196,7 +196,7 @@ model:
       n_blocks: 5
       identity_c_mlp: False
     DECODER:
-      layers: [640, 512, 401]
+      layers: [512, 512, 401]
       pre_activation: True
       pre_batchnorm: False
       batchnorm: False
