@@ -63,13 +63,6 @@ def train(args):
 
             # loss and optimizer
             xy_future_gt = data["future/xy"]
-            if config["train"]["normalize_output"]:
-                # assert not (config["train"]["normalize_output"] and config["train"]["trainable_cov"])
-                xy_future_gt = (data["future/xy"] - torch.Tensor([1.4715e+01, 4.3008e-03]).cuda()) / 10.
-                assert torch.isfinite(xy_future_gt).all()
-                _coordinates = coordinates.detach() * 10. + torch.Tensor([1.4715e+01, 4.3008e-03]).cuda()
-            else:
-                _coordinates = coordinates.detach()
             loss = nll_with_covariances(
                 xy_future_gt, coordinates, probas, data["future/valid"].squeeze(-1),
                 covariance_matrices) * loss_coeff

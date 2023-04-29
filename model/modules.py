@@ -179,6 +179,8 @@ class Decoder(nn.Module):
         assert torch.isfinite(c).all()
         probas = res[:, :, :, -1]
         assert torch.isfinite(probas).all()
+
+        # TODO(wangwenxi)
         if self._config["trainable_cov"]:
             # http://www.inference.org.uk/mackay/covariance.pdf
             covariance_matrices = (torch.cat([
