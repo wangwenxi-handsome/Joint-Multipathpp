@@ -141,7 +141,7 @@ class Decoder(nn.Module):
         self._config = config
         self._return_embedding = config["return_embedding"]
         self._learned_anchor_embeddings = torch.empty(
-            (1, config["n_trajectories"], config["size"]))
+            (1, 1, config["n_trajectories"], config["size"]))
         stdv = 1. / math.sqrt(config["size"])
         # stdv = 1. / config["size"]
         # nn.init.xavier_normal_(self._learned_anchor_embeddings)
@@ -152,30 +152,32 @@ class Decoder(nn.Module):
         if not self._return_embedding:
             self._mlp_decoder = NormalMLP(config["DECODER"])
     
-    def forward(self, target_scatter_numbers, target_scatter_idx, final_embedding, batch_size):
-        # assert torch.isfinite(self._learned_anchor_embeddings).all()
+    def forward(self, final_embedding):
+        assert torch.isfinite(self._learned_anchor_embeddings).all()
         assert torch.isfinite(final_embedding).all()
+        # trajectories_embeddings is [b, n, 6, 128]
+        # s is [b, n, 6, 128], c is [b, n, 128]
         trajectories_embeddings = self._mcg_predictor(
-            target_scatter_numbers, target_scatter_idx, self._learned_anchor_embeddings,
+            self._learned_anchor_embeddings.repeat(*final_embedding.shape[: 2], 1, 1),
             final_embedding, return_s=True)
         assert torch.isfinite(trajectories_embeddings).all()
         if self._return_embedding:
             return trajectories_embeddings
 
         res = self._mlp_decoder(trajectories_embeddings)
-        coordinates = res[:, :, :80 * 2].reshape(
-            batch_size, self._config["n_trajectories"], 80, 2)
+        coordinates = res[:, :, :, :80 * 2].reshape(
+            *final_embedding.shape[: 2], self._config["n_trajectories"], 80, 2)
         assert torch.isfinite(coordinates).all()
-        a = res[:, :, 80 * 2: 80 * 3].reshape(
-            batch_size, self._config["n_trajectories"], 80, 1)
+        a = res[:, :, :, 80 * 2: 80 * 3].reshape(
+            *final_embedding.shape[: 2], self._config["n_trajectories"], 80, 1)
         assert torch.isfinite(a).all()
-        b = res[:, :, 80 * 3: 80 * 4].reshape(
-            batch_size, self._config["n_trajectories"], 80, 1)
+        b = res[:, :, :, 80 * 3: 80 * 4].reshape(
+            *final_embedding.shape[: 2], self._config["n_trajectories"], 80, 1)
         assert torch.isfinite(b).all()
-        c = res[:, :, 80 * 4: 80 * 5].reshape(
-            batch_size, self._config["n_trajectories"], 80, 1)
+        c = res[:, :, :, 80 * 4: 80 * 5].reshape(
+            *final_embedding.shape[: 2], self._config["n_trajectories"], 80, 1)
         assert torch.isfinite(c).all()
-        probas = res[:, :, -1]
+        probas = res[:, :, :, -1]
         assert torch.isfinite(probas).all()
         if self._config["trainable_cov"]:
             # http://www.inference.org.uk/mackay/covariance.pdf
@@ -212,15 +214,13 @@ class DecoderHandler(nn.Module):
             random_head_selector = np.ones_like(random_head_selector) * (random_head_selector > 0.5)
         if self._return_embedding:
             for coeff, decoder in zip(random_head_selector, self._decoders):
-                embeddings = decoder(
-                    final_embedding, batch_size)
+                embeddings = decoder(final_embedding)
                 stacked_embeddings.append(embeddings)
             stacked_embeddings = torch.cat(stacked_embeddings, dim=1)
             return stacked_embeddings, self._n_decoders / random_head_selector.sum()
         else:
             for coeff, decoder in zip(random_head_selector, self._decoders):
-                probas, coordinates, covariance_matrices = decoder(
-                    final_embedding, batch_size)
+                probas, coordinates, covariance_matrices = decoder(final_embedding)
                 probas, coordinates, covariance_matrices = [
                     coeff * x + (1 - coeff) * x.detach() for x in [
                         probas, coordinates, covariance_matrices]]
