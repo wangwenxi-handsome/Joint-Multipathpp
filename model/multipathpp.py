@@ -47,7 +47,7 @@ class MultiPathPP(nn.Module):
         roadgraph_mcg_embedding = self._roadgraph_mcg_encoder(
             segment_embeddings, agent_intention_embedding, return_s=False)
         assert torch.isfinite(roadgraph_mcg_embedding).all()
-        # agent_embedding is [b, n, 128]
+        # agent_embedding is [b, n, 256]
         agent_embedding = torch.cat(
             [agent_intention_embedding, roadgraph_mcg_embedding], dim=-1)
         agent_embedding = self._agent_linear(agent_embedding)
@@ -55,8 +55,7 @@ class MultiPathPP(nn.Module):
         assert torch.isfinite(agent_embedding).all()
 
         # Decoder
-        probas, coordinates, covariance_matrices, loss_coeff = self._decoder_handler(
-            agent_embedding, data["batch_size"])
+        probas, coordinates, covariance_matrices, loss_coeff = self._decoder_handler(agent_embedding)
         assert probas.shape[2] == coordinates.shape[2] == covariance_matrices.shape[2] == 6
         assert torch.isfinite(probas).all()
         assert torch.isfinite(coordinates).all()

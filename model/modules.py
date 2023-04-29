@@ -204,7 +204,7 @@ class DecoderHandler(nn.Module):
         self._decoders = nn.ModuleList([
             Decoder(config["decoder_config"]) for _ in range(self._n_decoders)])
     
-    def forward(self, final_embedding, batch_size):
+    def forward(self, final_embedding):
         stacked_probas, stacked_coordinates, stacked_covariance_matrices = [], [], []
         stacked_embeddings = []
         random_head_selector = np.random.uniform(low=0.0, high=1.0, size=self._n_decoders)

@@ -122,8 +122,8 @@ model:
 
   agent_linear:
     n_layers: 3
-    n_in: 128
-    n_out: 128
+    n_in: 256
+    n_out: 256
     bias: True
     batchnorm: False
     dropout: False
@@ -133,8 +133,8 @@ model:
       c_bias: True
       mlp:
         n_layers: 3
-        n_in: 128
-        n_out: 128
+        n_in: 256
+        n_out: 256
         bias: True
         batchnorm: False
         dropout: False
