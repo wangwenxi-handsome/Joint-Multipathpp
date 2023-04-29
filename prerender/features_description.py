@@ -1,5 +1,6 @@
 import tensorflow as tf
 
+
 _roadgraph_features = {
     "roadgraph_samples/dir": tf.io.FixedLenFeature(
         [30000, 3], tf.float32, default_value=None
@@ -24,7 +25,6 @@ _general_state_features = {
     "state/is_sdc": tf.io.FixedLenFeature([128], tf.int64, default_value=None),
     "state/tracks_to_predict": tf.io.FixedLenFeature([128], tf.int64, default_value=None),
     "scenario/id": tf.io.FixedLenFeature([1], tf.string, default_value=None)}
-
 
 _values_number_for_timezone = {
     "current": 1,

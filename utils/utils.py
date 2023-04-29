@@ -30,9 +30,10 @@ def get_git_revision_short_hash():
 
 def dict_to_cuda(d):
     passing_keys = set([
-                    'history/lstm_data', 'history/lstm_data_diff',
-                    'history/mcg_input_data', 'history/mcg_input_data',
-                    'batch_size', 'future/xy', 'future/valid'])
+        'history/lstm_data', 'history/lstm_data_diff',
+        'history/mcg_input_data', 'history/mcg_input_data',
+        'batch_size', 'road_network_embeddings',
+        'future/xy', 'future/valid', 'agent_valid'])
     for k in d.keys():
         if k not in passing_keys:
             continue

@@ -1,12 +1,15 @@
-import tensorflow as tf
+import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),".."))
 import numpy as np
-from prerender.features_description import generate_features_description
-from prerender.configs import get_vectorizer_config
-from prerender.vectorizer import SegmentAndAgentSequenceRender
-from prerender.prerender import data_to_numpy
+import tensorflow as tf
+from features_description import generate_features_description
+from configs import get_vectorizer_config
+from vectorizer import SegmentAndAgentSequenceRender
+from prerender import data_to_numpy
 
 
-def prerender_one_scene(file_path): 
+def prerender_one_scene(file_path):
     dataset = tf.data.TFRecordDataset([file_path], num_parallel_reads=1)
     vectorizer_config = get_vectorizer_config("NCloseSegAndValidAgentRenderer")
     vectorizer = SegmentAndAgentSequenceRender(vectorizer_config)
@@ -45,6 +48,6 @@ def agent_order_check(file_path):
 
 
 if __name__ == "__main__":
-    file_path = "training_tfexample.tfrecord-00001-of-01000"
+    file_path = "E:\\motion_dataset\\training\\training_tfexample.tfrecord-00001-of-01000"
     # agent_order_check(file_path)
     prerender_one_scene(file_path)
