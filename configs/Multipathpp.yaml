@@ -1,13 +1,12 @@
 train:
   data_config:
     dataset_config:
-      data_path: "data/prerendered/train/"
       lstm_input_data: ["xy", "yaw", "speed", "width", "length", "valid"]
       lstm_input_data_diff: ["xy", "yaw", "speed", "valid"]
       mask_history: True
       mask_history_fraction: 0.15
     dataloader_config:
-      batch_size: 32
+      batch_size: 8
       shuffle: True
       num_workers: 6
   optimizer:
@@ -22,12 +21,11 @@ train:
 val:
   data_config:
     dataset_config:
-      data_path: "data/prerendered/validation/"
       lstm_input_data: ["xy", "yaw", "speed", "width", "length", "valid"]
       lstm_input_data_diff: ["xy", "yaw", "speed", "valid"]
       mask_history: False
     dataloader_config:
-      batch_size: 32
+      batch_size: 8
       shuffle: False
       num_workers: 6
 

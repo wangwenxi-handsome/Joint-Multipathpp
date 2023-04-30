@@ -1,29 +1,30 @@
 import os
 import argparse
 import torch
-from torch import nn
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import numpy as np
 from tqdm import tqdm
-from model.modules import MLP, CGBlock, MCGBlock, HistoryEncoder
 from model.multipathpp import MultiPathPP
 from model.data import get_dataloader
-from model.losses import pytorch_neg_multi_log_likelihood_batch, nll_with_covariances
-from matplotlib import pyplot as plt
+from model.losses import  nll_with_covariances
 from utils.utils import set_random_seed, get_last_file, get_git_revision_short_hash, dict_to_cuda, get_yaml_config
 
 
 def train(args):
-    # init
+    # config
     set_random_seed(42)
-    config = get_yaml_config()
-    models_path = os.path.join("models", get_git_revision_short_hash())
-    if(~os.path.exists(models_path)):
-        os.mkdir(models_path)
-    last_checkpoint = get_last_file(models_path)
-    dataloader = get_dataloader(config["train"]["data_config"])
-    val_dataloader = get_dataloader(config["val"]["data_config"])
+    config = get_yaml_config(args.config)
+
+    # dataloader
+    dataloader = get_dataloader(args.train_data_path, config["train"]["data_config"])
+    val_dataloader = get_dataloader(args.val_data_path, config["val"]["data_config"])
+
+    # model init
+    checkpoints_path = os.path.join("checkpoints", get_git_revision_short_hash())
+    if(not os.path.exists(checkpoints_path)):
+        os.mkdir(checkpoints_path)
+    last_checkpoint = get_last_file(checkpoints_path)
     model = MultiPathPP(config["model"])
     model.cuda()
     optimizer = Adam(model.parameters(), **config["train"]["optimizer"])
@@ -81,7 +82,7 @@ def train(args):
                 }
                 if config["train"]["scheduler"]:
                     saving_data["scheduler_state_dict"] = scheduler.state_dict()
-                torch.save(saving_data, os.path.join(models_path, f"last.pth"))
+                torch.save(saving_data, os.path.join(checkpoints_path, f"last.pth"))
             # validation
             if num_steps % (len(dataloader) // 2) == 0 and this_num_steps > 0:
                 del data
@@ -89,11 +90,7 @@ def train(args):
                 model.eval()
                 with torch.no_grad():
                     losses = []
-                    min_ades = []
-                    first_batch = True
                     for data in tqdm(val_dataloader):
-                        if config["train"]["normalize"]:
-                            data = normalize(data, config)
                         dict_to_cuda(data)
                         probas, coordinates, covariance_matrices, loss_coeff = model(data, num_steps)
                         if config["train"]["normalize_output"]:
@@ -114,7 +111,7 @@ def train(args):
                 }
                 if config["train"]["scheduler"]:
                     saving_data["scheduler_state_dict"] = scheduler.state_dict()
-                torch.save(saving_data, os.path.join(models_path, f"{num_steps}.pth"))
+                torch.save(saving_data, os.path.join(checkpoints_path, f"{num_steps}.pth"))
 
             num_steps += 1
             this_num_steps += 1
@@ -124,8 +121,8 @@ def train(args):
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train-data-path", type=str, required=True)
-    parser.add_argument("--validation-data-path", type=str, required=True)
+    parser.add_argument("--train_data_path", type=str, required=True)
+    parser.add_argument("--val_data_path", type=str, required=True)
     parser.add_argument("--config", type=str, required=True, help="Vectorizer Config")
     args = parser.parse_args()
     return args

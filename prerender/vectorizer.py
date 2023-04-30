@@ -21,7 +21,7 @@ class Renderer:
         result = []
         key_with_different_timezones = ["x", "y", "speed", "bbox_yaw", "valid"]
         common_keys = [
-            "state/id", "state/is_sdc", "state/type", "state/current/width", "state/current/length"]
+            "state/id", "state/is_sdc", "state/type", "state/current/width", "state/current/length", "state/current/z"]
         for key in key_with_different_timezones:
             for zone in ["past", "current", "future"]:
                 result.append(f"state/{zone}/{key}")
@@ -73,6 +73,7 @@ class AgentFilteringPolicy:
         # compute agent_valid, if agent_valid is False, the agent is not considered even if it is valid in some timestamps.
         if target_num == self._config["max_agent_num"]:
             agent_valid = np.ones(self._config["max_agent_num"]) == 1
+            assert np.sum(target_valid) == self._config["max_agent_num"]
             return target_valid, agent_valid
         else:
             # padding to max agent_num, because there no enough current_available_valid agents.
@@ -82,6 +83,7 @@ class AgentFilteringPolicy:
                     agent_valid.append(True)
                 elif(target_num < self._config["max_agent_num"]):
                     agent_valid.append(False)
+                    target_valid[i] = True
                     target_num += 1
             return target_valid, np.array(agent_valid)
 
@@ -161,7 +163,7 @@ class SegmentAndAgentSequenceRender(Renderer):
                 self._split_past_and_future(data, key)
         # (n_agents,) and (n_agents, 1)
         for key in ["state/id", "state/is_sdc", "state/type", "state/current/width",
-                "state/current/length"]:
+                "state/current/length", "state/current/z"]:
             preprocessed_data[key.split('/')[-1]] = data[key]
         # string
         preprocessed_data["scenario_id"] = data["scenario/id"]
@@ -289,6 +291,7 @@ class SegmentAndAgentSequenceRender(Renderer):
             # (1, 2)
             "shift": current_agent_scene_shift[None, ],
             # (n, )
+            "agent_z": agent_history_info["z"],
             "agent_type": agent_history_info["type"].astype(int),
             "agent_id": agent_history_info["id"],
             "agent_valid": agent_valid,

@@ -4,7 +4,7 @@ from vectorizer import SegmentAndAgentSequenceRender
 NCloseSegAndValidAgentRenderer = {
     "class": SegmentAndAgentSequenceRender,
     "n_closest_segments": 128,
-    "max_agent_num": 32,
+    "max_agent_num": 16,
     "drop_segments": 6,
 }
 

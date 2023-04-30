@@ -8,8 +8,8 @@ def angle_to_range(yaw):
     return yaw
 
 class SegmentAndAgentSequenceDataset(Dataset):
-    def __init__(self, config):
-        self._data_path = config["data_path"]
+    def __init__(self, data_path, config):
+        self._data_path = data_path
         self._config = config
         files = os.listdir(self._data_path)
         self._files = [os.path.join(self._data_path, f) for f in files]
@@ -124,8 +124,8 @@ class SegmentAndAgentSequenceDataset(Dataset):
         return result_dict
 
 
-def get_dataloader(config):
-    dataset = SegmentAndAgentSequenceDataset(config["dataset_config"])
+def get_dataloader(data_path, config):
+    dataset = SegmentAndAgentSequenceDataset(data_path, config["dataset_config"])
     dataloader = DataLoader(
         dataset, collate_fn=SegmentAndAgentSequenceDataset.collate_fn, **config["dataloader_config"])
     return dataloader

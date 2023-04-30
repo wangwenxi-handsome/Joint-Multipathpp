@@ -24,14 +24,14 @@ class MultiPathPP(nn.Module):
         assert torch.isfinite(mcg_input_data_linear).all()
         # agents_info_embeddings is [b, n, 256]
         agents_info_embeddings = self._agent_history_encoder(
-            data["target/history/lstm_data"], data["target/history/lstm_data_diff"],
+            data["history/lstm_data"], data["history/lstm_data_diff"],
             mcg_input_data_linear)
         agents_info_embeddings = self._agent_info_linear(agents_info_embeddings)
         assert torch.isfinite(agents_info_embeddings).all()
         # agent_interaction_embedding is [b, n, 256]
         # s is [b, n, n, 256], c is [b, n, 256](it will be expanded to [b, n, 1, 256] in MCG)
         agent_interaction_embedding = self._interaction_mcg_encoder(
-            torch.repeat(agents_info_embeddings.unsqueeze(1), [1, agents_info_embeddings.shape[1], 1, 1]), 
+            agents_info_embeddings.unsqueeze(1).repeat(1, agents_info_embeddings.shape[1], 1, 1), 
             agents_info_embeddings, return_s=False)
         assert torch.isfinite(agent_interaction_embedding).all()
         # agent_intention_embedding is [b, n, 128]

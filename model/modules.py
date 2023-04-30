@@ -2,7 +2,6 @@ import math
 import numpy as np
 import torch
 from torch import nn
-from torch_scatter import scatter_max
 
 
 class MLP(nn.Module):
@@ -69,9 +68,9 @@ class CGBlock(nn.Module):
         c = self.c_mlp(c.view(-1, c.shape[-1])).view(prev_c_shape)
         s = s * c
         if self._config["agg_mode"] == "max":
-            aggregated_c = torch.max(s, dim=1, keepdim=True)[0]
+            aggregated_c = torch.max(s, dim=-2, keepdim=True)[0]
         elif self._config["agg_mode"] in ["mean", "avg"]:
-            aggregated_c = torch.mean(s, dim=1, keepdim=True)
+            aggregated_c = torch.mean(s, dim=-2, keepdim=True)
         else:
             raise Exception("Unknown agg mode for MCG")
         return s, aggregated_c
@@ -119,7 +118,6 @@ class MCGBlock(nn.Module):
             if len(c.shape) < len(s.shape):
                 c = c.unsqueeze(-2)
         self._check_sc_valid(s, c)
-
         running_mean_s, running_mean_c = s, c
         for i, cg_block in enumerate(self._blocks, start=1):
             s, c = cg_block(running_mean_s, running_mean_c)
@@ -185,16 +183,15 @@ class Decoder(nn.Module):
             covariance_matrices = (torch.cat([
                 torch.exp(a) * torch.cosh(b), torch.sinh(b),
                 torch.sinh(b), torch.exp(-a) * torch.cosh(b)
-            ], axis=-1) * torch.exp(c)).reshape(
-                coordinates.shape[0], coordinates.shape[1], coordinates.shape[2], 2, 2)
+            ], axis=-1) * torch.exp(c)).reshape(*coordinates.shape[: 4], 2, 2)
         else:
             _zeros, _ones = torch.zeros_like(a), torch.ones_like(a)
             covariance_matrices = torch.cat([_ones, _zeros, _zeros, _ones], axis=-1).reshape(
-                coordinates.shape[0], coordinates.shape[1], coordinates.shape[2], 2, 2)
+                *coordinates.shape[: 4], 2, 2)
             
         # probas is [b, n, 6]
-        # coordinates is [b, n, 6, 160]
-        # covariance_matrices is [b, n, 6, 2, 2]
+        # coordinates is [b, n, 6, 80, 2]
+        # covariance_matrices is [b, n, 6, 80, 2, 2]
         return probas, coordinates, covariance_matrices
 
 
@@ -320,11 +317,14 @@ class HistoryEncoder(nn.Module):
         self._position_mcg = MCGBlock(config["position_mcg_config"])
 
     def forward(self, lstm_data, lstm_data_diff, mcg_data):
-        position_lstm_embedding = self._position_lstm(lstm_data)[0][:, -1:, :]
-        position_diff_lstm_embedding = self._position_diff_lstm(lstm_data_diff)[0][:, -1:, :]
+        b, n = lstm_data.shape[0], lstm_data.shape[1]
+        position_lstm_embedding = self._position_lstm(lstm_data.reshape(-1, *lstm_data.shape[-2: ]))[0][:, -1:, :]
+        position_diff_lstm_embedding = self._position_diff_lstm(lstm_data_diff.reshape(-1, *lstm_data_diff.shape[-2: ]))[0][:, -1:, :]
         position_mcg_embedding = self._position_mcg(mcg_data, return_s=False)
         return torch.cat([
-            position_lstm_embedding, position_diff_lstm_embedding, position_mcg_embedding], axis=-1)
+            position_lstm_embedding.reshape(b, n, -1), 
+            position_diff_lstm_embedding.reshape(b, n, -1), 
+            position_mcg_embedding], axis=-1)
 
 
 class MHA(nn.Module):
