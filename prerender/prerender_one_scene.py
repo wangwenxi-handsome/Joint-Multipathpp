@@ -1,6 +1,7 @@
 import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),".."))
+import time
 import numpy as np
 import tensorflow as tf
 from features_description import generate_features_description
@@ -10,16 +11,15 @@ from prerender import data_to_numpy
 
 
 def prerender_one_scene(file_path):
-    dataset = tf.data.TFRecordDataset([file_path], num_parallel_reads=1)
     vectorizer_config = get_vectorizer_config("NCloseSegAndValidAgentRenderer")
     vectorizer = SegmentAndAgentSequenceRender(vectorizer_config)
-
+    dataset = tf.data.TFRecordDataset([file_path], num_parallel_reads=1)
     for data in dataset.as_numpy_iterator():
         data = tf.io.parse_single_example(data, generate_features_description())
         data_to_numpy(data)
 
         # prerender the scene
-        data = vectorizer.render(data)
+        data = vectorizer.render(data, os.path.basename(file_path))
         for i in data:
             if isinstance(data[i], np.ndarray):
                 print(i, data[i].shape)

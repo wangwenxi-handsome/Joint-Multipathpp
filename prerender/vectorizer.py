@@ -219,7 +219,7 @@ class SegmentAndAgentSequenceRender(Renderer):
             segment_end_minus_r_norm, segment_type_ohe], axis=-1)
         return resulting_embeddings
 
-    def render(self, data):
+    def render(self, data, file_name):
         agent_valid = self._preprocess_data(data)
         road_network_info = self._prepare_roadnetwork_info(data)
         agent_history_info = self._prepare_agent_history(data)
@@ -274,11 +274,13 @@ class SegmentAndAgentSequenceRender(Renderer):
                 ], axis=0)
             road_segments_valid.append(target_road_segments_valid)
             road_segments_embeddings.append(target_road_segments_embeddings)
+        road_segments_valid = np.stack(road_segments_valid, axis = 0)
         road_segments_embeddings = np.stack(road_segments_embeddings, axis = 0)
 
         # return scene_data
         scene_data = {
             # int and string
+            "file_name": file_name,
             "ego_id": ego_id,
             "target_id": max(target_id),
             "scenario_id": agent_history_info["scenario_id"].item().decode("utf-8"),
@@ -303,7 +305,9 @@ class SegmentAndAgentSequenceRender(Renderer):
             "future/yaw": current_scene_agents_yaws_future,
             "future/speed": agent_history_info["future/speed"],
             "future/valid": agent_history_info["future/valid"],
-            # (max_agent_num, 128, -1)
+            # (n, 128, -1)
             "road_network_embeddings": road_segments_embeddings,
+            # (n, 128)
+            "road_segments_valid": road_segments_valid,
         }
         return scene_data
