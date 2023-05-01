@@ -91,10 +91,6 @@ def train(args):
                     for data in tqdm(val_dataloader):
                         dict_to_cuda(data)
                         probas, coordinates, covariance_matrices = model(data, num_steps)
-                        if config["train"]["normalize_output"]:
-                            xy_future_gt = (data["future/xy"] - torch.Tensor([1.4715e+01, 4.3008e-03]).cuda()) / 10.
-                            assert torch.isfinite(xy_future_gt).all()
-                            coordinates = coordinates * 10. + torch.Tensor([1.4715e+01, 4.3008e-03]).cuda()
                         loss = nll_with_covariances(
                             xy_future_gt, coordinates, probas, data["future/valid"],
                             covariance_matrices)

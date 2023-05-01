@@ -51,7 +51,8 @@ class NormalMLP(nn.Module):
             x = l(x)
             assert torch.isfinite(x).all()
         return x
-            
+
+
 """
 CGBlock:
     s = mlp(s) * mlp(c)
@@ -72,11 +73,12 @@ class CGBlock(nn.Module):
         self.n_in = self.s_mlp.n_in
         self.n_out = self.s_mlp.n_out
 
-    def forward(self, s, c):
+    def forward(self, s, c, mask=None):
         prev_s_shape, prev_c_shape = s.shape, c.shape
         s = self.s_mlp(s.view(-1, s.shape[-1])).view(prev_s_shape)
         c = self.c_mlp(c.view(-1, c.shape[-1])).view(prev_c_shape)
         s = s * c
+        assert torch.isfinite(s).all()
         if self._config["agg_mode"] == "max":
             aggregated_c = torch.max(s, dim=-2, keepdim=True)[0]
         elif self._config["agg_mode"] in ["mean", "avg"]:
@@ -129,7 +131,7 @@ class MCGBlock(nn.Module):
             result = self._config["alpha"] * prevoius_mean + self._config["beta"] * new_value
         return result
 
-    def forward(self, s, c=None, return_s=False):
+    def forward(self, s, c=None, mask=None, return_s=False):
         if c is None:
             assert self._config["identity_c_mlp"]
             c = torch.ones(*s.shape[: -2], 1, s.shape[-1], requires_grad=True).cuda()
@@ -140,7 +142,7 @@ class MCGBlock(nn.Module):
         self._check_sc_valid(s, c)
         running_mean_s, running_mean_c = s, c
         for i, cg_block in enumerate(self._blocks, start=1):
-            s, c = cg_block(running_mean_s, running_mean_c)
+            s, c = cg_block(running_mean_s, running_mean_c, mask)
             assert torch.isfinite(s).all()
             assert torch.isfinite(c).all()
             running_mean_s = self._compute_running_mean(running_mean_s, s, i)

@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from .modules import MCGBlock, HistoryEncoder, MLP, NormalMLP, Decoder
+from utils.utils import mask_by_valid
 
 class MultiPathPP(nn.Module):
     def __init__(self, config):
@@ -27,33 +28,40 @@ class MultiPathPP(nn.Module):
             data["history/lstm_data"], data["history/lstm_data_diff"],
             mcg_input_data_linear)
         agents_info_embeddings = self._agent_info_linear(agents_info_embeddings)
+        agents_info_embeddings = mask_by_valid(agents_info_embeddings, data["agent_valid"])
         assert torch.isfinite(agents_info_embeddings).all()
         # agent_interaction_embedding is [b, n, 256]
         # s is [b, n, n, 256], c is [b, n, 256](it will be expanded to [b, n, 1, 256] in MCG)
         agent_interaction_embedding = self._interaction_mcg_encoder(
             agents_info_embeddings.unsqueeze(1).repeat(1, agents_info_embeddings.shape[1], 1, 1), 
             agents_info_embeddings, return_s=False)
+        agent_interaction_embedding = mask_by_valid(agent_interaction_embedding, data["agent_valid"])
         assert torch.isfinite(agent_interaction_embedding).all()
         # agent_intention_embedding is [b, n, 128]
         agent_intention_embedding = torch.cat(
             [agents_info_embeddings, agent_interaction_embedding], axis=-1)
         agent_intention_embedding = self._agent_intention_linear(agent_intention_embedding)
+        agent_intention_embedding = mask_by_valid(agent_intention_embedding, data["agent_valid"])
         assert torch.isfinite(agent_intention_embedding).all()
         # segment_embeddings is [b, n, s, 128]
         segment_embeddings = self._polyline_encoder(data["road_network_embeddings"])
+        segment_embeddings = mask_by_valid(segment_embeddings, data["road_segments_valid"])
         assert torch.isfinite(segment_embeddings).all()
         # roadgraph_mcg_embedding is [b, n, 128]
         # s is [b, n, s, 128], c is [b, n, 128](it will be expanded to [b, n, 1, 128] in MCG)
         roadgraph_mcg_embedding = self._roadgraph_mcg_encoder(
             segment_embeddings, agent_intention_embedding, return_s=False)
+        roadgraph_mcg_embedding = mask_by_valid(roadgraph_mcg_embedding, data["agent_valid"])
         assert torch.isfinite(roadgraph_mcg_embedding).all()
         # agent_embedding is [b, n, 512]
         agent_embedding = torch.cat(
             [agents_info_embeddings, agent_intention_embedding, roadgraph_mcg_embedding], dim=-1)
         agent_embedding = self._agent_linear(agent_embedding)
+        agent_embedding = mask_by_valid(agent_embedding, data["agent_valid"])
         agent_embedding = self._agent_mcg_encoder(
             agent_embedding.unsqueeze(1).repeat(1, agent_embedding.shape[1], 1, 1), 
             agent_embedding, return_s=False)
+        agent_embedding = mask_by_valid(agent_embedding, data["agent_valid"])
         assert torch.isfinite(agent_embedding).all()
 
         # Decoder

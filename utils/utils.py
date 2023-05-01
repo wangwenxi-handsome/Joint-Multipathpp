@@ -34,8 +34,9 @@ def dict_to_cuda(d):
     passing_keys = set([
         'history/lstm_data', 'history/lstm_data_diff',
         'history/mcg_input_data', 'history/mcg_input_data',
-        'batch_size', 'road_network_embeddings',
-        'future/xy', 'future/valid', 'agent_valid'])
+        'batch_size', 'road_network_embeddings', 
+        'future/xy', 'future/valid',
+        'agent_valid', 'road_segments_valid'])
     for k in d.keys():
         if k not in passing_keys:
             continue
@@ -49,3 +50,11 @@ def get_yaml_config(path):
     with open(path, 'r') as stream:
         config = yaml.load(stream, Loader)
     return config
+
+
+def mask_by_valid(input_tensor, mask):
+    mask = mask.squeeze()
+    return input_tensor * mask.reshape(*(
+        *mask.shape, 
+        *(1 for _ in range(len(input_tensor.shape) - len(mask.shape)))
+    ))
