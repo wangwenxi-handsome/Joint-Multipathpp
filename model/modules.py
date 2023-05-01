@@ -52,7 +52,17 @@ class NormalMLP(nn.Module):
             assert torch.isfinite(x).all()
         return x
             
-
+"""
+CGBlock:
+    s = mlp(s) * mlp(c)
+    c = agg(s)
+Input:
+    - s.shape = [..., n, d]
+    - c.shape = [..., 1, d]
+Output:
+    - s.shape = [..., n, d]
+    - aggregated_c.shape = [..., 1, d]
+"""
 class CGBlock(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -75,7 +85,17 @@ class CGBlock(nn.Module):
             raise Exception("Unknown agg mode for MCG")
         return s, aggregated_c
 
-    
+
+"""
+MCGBlock:
+    stacked CGBlock
+Input:
+    - s.shape = [..., n, d]
+    - c.shape = [..., 1, d] or [..., d](it will be expanded dim on -2)
+Output:
+    - s.shape = [..., n, d]
+    - aggregated_c.shape = [..., d]
+"""
 class MCGBlock(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -133,11 +153,20 @@ class MCGBlock(nn.Module):
             return running_mean_c.squeeze()
 
 
+"""
+Decoder:
+    predict m numbers trajectory of each agent which is related to Gaussian Mixture Model.
+Input:
+    - final_embedding.shape is [b, n, d]
+Output:
+    - probas is [b, n, m]
+    - coordinates is [b, n, m, t, 2]
+    - covariance_matrices is [b, n, m, t, 2, 2]
+"""
 class Decoder(nn.Module):
     def __init__(self, config):
         super().__init__()
         self._config = config
-        self._return_embedding = config["return_embedding"]
         self._learned_anchor_embeddings = torch.empty(
             (1, 1, config["n_trajectories"], config["size"]))
         stdv = 1. / math.sqrt(config["size"])
@@ -147,21 +176,15 @@ class Decoder(nn.Module):
         self._learned_anchor_embeddings.requires_grad_(True)
         self._learned_anchor_embeddings = nn.Parameter(self._learned_anchor_embeddings)
         self._mcg_predictor = MCGBlock(config["mcg_predictor"])
-        if not self._return_embedding:
-            self._mlp_decoder = NormalMLP(config["DECODER"])
+        self._mlp_decoder = NormalMLP(config["DECODER"])
     
     def forward(self, final_embedding):
         assert torch.isfinite(self._learned_anchor_embeddings).all()
         assert torch.isfinite(final_embedding).all()
-        # trajectories_embeddings is [b, n, 6, 512]
-        # s is [b, n, 6, 512], c is [b, n, 512]
         trajectories_embeddings = self._mcg_predictor(
             self._learned_anchor_embeddings.repeat(*final_embedding.shape[: 2], 1, 1),
             final_embedding, return_s=True)
         assert torch.isfinite(trajectories_embeddings).all()
-        if self._return_embedding:
-            return trajectories_embeddings
-        # res is [b, n, 6, 401]
         res = self._mlp_decoder(trajectories_embeddings)
         coordinates = res[:, :, :, :80 * 2].reshape(
             *final_embedding.shape[: 2], self._config["n_trajectories"], 80, 2)
@@ -188,51 +211,7 @@ class Decoder(nn.Module):
             _zeros, _ones = torch.zeros_like(a), torch.ones_like(a)
             covariance_matrices = torch.cat([_ones, _zeros, _zeros, _ones], axis=-1).reshape(
                 *coordinates.shape[: 4], 2, 2)
-            
-        # probas is [b, n, 6]
-        # coordinates is [b, n, 6, 80, 2]
-        # covariance_matrices is [b, n, 6, 80, 2, 2]
         return probas, coordinates, covariance_matrices
-
-
-class DecoderHandler(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self._return_embedding = config["return_embedding"]
-        config["decoder_config"]["return_embedding"] = self._return_embedding
-        self._n_decoders = int(config["n_decoders"])
-        self._decoders = nn.ModuleList([
-            Decoder(config["decoder_config"]) for _ in range(self._n_decoders)])
-    
-    def forward(self, final_embedding):
-        stacked_probas, stacked_coordinates, stacked_covariance_matrices = [], [], []
-        stacked_embeddings = []
-        if self._n_decoders == 1:
-            random_head_selector = np.array([1.0])
-        while random_head_selector.sum() == 0:
-            random_head_selector = np.random.uniform(low=0.0, high=1.0, size=self._n_decoders)
-            random_head_selector = np.ones_like(random_head_selector) * (random_head_selector > 0.5)
-
-        if self._return_embedding:
-            for coeff, decoder in zip(random_head_selector, self._decoders):
-                embeddings = decoder(final_embedding)
-                stacked_embeddings.append(embeddings)
-            stacked_embeddings = torch.cat(stacked_embeddings, dim=1)
-            return stacked_embeddings, self._n_decoders / random_head_selector.sum()
-        else:
-            for coeff, decoder in zip(random_head_selector, self._decoders):
-                probas, coordinates, covariance_matrices = decoder(final_embedding)
-                probas, coordinates, covariance_matrices = [
-                    coeff * x + (1 - coeff) * x.detach() for x in [
-                        probas, coordinates, covariance_matrices]]
-                stacked_probas.append(probas)
-                stacked_coordinates.append(coordinates)
-                stacked_covariance_matrices.append(covariance_matrices)
-            stacked_probas, stacked_coordinates, stacked_covariance_matrices = [
-                torch.cat(x, dim=1) for x in [
-                    stacked_probas, stacked_coordinates, stacked_covariance_matrices]]
-            return (stacked_probas, stacked_coordinates, stacked_covariance_matrices,
-                max(self._n_decoders / random_head_selector.sum(), 1))
 
 
 class EM(nn.Module):

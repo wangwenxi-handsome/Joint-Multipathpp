@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from .modules import MCGBlock, HistoryEncoder, MLP, NormalMLP, Decoder, DecoderHandler, EM, MHA
+from .modules import MCGBlock, HistoryEncoder, MLP, NormalMLP, Decoder
 
 class MultiPathPP(nn.Module):
     def __init__(self, config):
@@ -14,8 +14,8 @@ class MultiPathPP(nn.Module):
         self._polyline_encoder = NormalMLP(config["polyline_encoder"])
         self._roadgraph_mcg_encoder = MCGBlock(config["roadgraph_mcg_encoder"])
         self._agent_linear = MLP(config["agent_linear"])
-        # self._agent_mcg_encoder = MCGBlock(config["agent_mcg_encoder"])
-        self._decoder_handler = DecoderHandler(config["decoder_handler_config"])
+        self._agent_mcg_encoder = MCGBlock(config["agent_mcg_encoder"])
+        self._decoder = Decoder(config["decoder_config"])
     
     def forward(self, data, num_steps):
         # Encoder
@@ -51,13 +51,18 @@ class MultiPathPP(nn.Module):
         agent_embedding = torch.cat(
             [agents_info_embeddings, agent_intention_embedding, roadgraph_mcg_embedding], dim=-1)
         agent_embedding = self._agent_linear(agent_embedding)
-        # agent_embedding = self._agent_mcg_encoder(agent_embedding, return_s=False)
+        agent_embedding = self._agent_mcg_encoder(
+            agent_embedding.unsqueeze(1).repeat(1, agent_embedding.shape[1], 1, 1), 
+            agent_embedding, return_s=False)
         assert torch.isfinite(agent_embedding).all()
 
         # Decoder
-        probas, coordinates, covariance_matrices, loss_coeff = self._decoder_handler(agent_embedding)
+        # probas is [b, n, m]
+        # coordinates is [b, n, m, t, 2]
+        # covariance_matrices is [b, n, m, t, 2, 2]
+        probas, coordinates, covariance_matrices = self._decoder(agent_embedding)
         assert probas.shape[2] == coordinates.shape[2] == covariance_matrices.shape[2] == self._config["n_trajectories"]
         assert torch.isfinite(probas).all()
         assert torch.isfinite(coordinates).all()
         assert torch.isfinite(covariance_matrices).all()
-        return probas, coordinates, covariance_matrices, loss_coeff
+        return probas, coordinates, covariance_matrices

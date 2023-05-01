@@ -14,7 +14,6 @@ train:
   n_epochs: 100
   validate_every_n_steps: 1000
   max_iterations: 5000001
-  normalize: False
   clip_grad_norm: 0.4
   scheduler: True
 
@@ -131,8 +130,8 @@ model:
       c_bias: True
       mlp:
         n_layers: 3
-        n_in: 256
-        n_out: 256
+        n_in: 512
+        n_out: 512
         bias: True
         batchnorm: False
         dropout: False
@@ -143,39 +142,9 @@ model:
     n_blocks: 5
     identity_c_mlp: False
 
-  decoder_handler_config:
-    n_decoders: 1
-    return_embedding: False
-    decoder_config:
-      trainable_cov: True
-      size: 512
-      n_trajectories: 6
-      mcg_predictor:
-        block:
-          c_bias: True
-          mlp:
-            n_layers: 3
-            n_in: 512
-            n_out: 512
-            bias: True
-            batchnorm: False
-            dropout: False
-        agg_mode: "max"
-        running_mean_mode: "real"
-        alpha: 0.1
-        beta: 0.9
-        n_blocks: 5
-        identity_c_mlp: False
-      DECODER:
-        layers: [512, 512, 401]
-        pre_activation: True
-        pre_batchnorm: False
-        batchnorm: False
-
-  final_decoder:
+  decoder_config:
     trainable_cov: True
     size: 512
-    return_embedding: False
     n_trajectories: 6
     mcg_predictor:
       block:

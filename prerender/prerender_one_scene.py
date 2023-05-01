@@ -11,7 +11,7 @@ from prerender import data_to_numpy
 
 
 def prerender_one_scene(file_path):
-    vectorizer_config = get_vectorizer_config("NCloseSegAndValidAgentRenderer")
+    vectorizer_config = get_vectorizer_config("N16CloseSegAndValidAgentRenderer")
     vectorizer = SegmentAndAgentSequenceRender(vectorizer_config)
     dataset = tf.data.TFRecordDataset([file_path], num_parallel_reads=1)
     for data in dataset.as_numpy_iterator():

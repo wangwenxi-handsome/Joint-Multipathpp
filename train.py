@@ -51,10 +51,8 @@ def train(args):
             # train
             model.train()
             optimizer.zero_grad()
-            if config["train"]["normalize"]:
-                data = normalize(data, config)
             dict_to_cuda(data)
-            probas, coordinates, covariance_matrices, loss_coeff = model(data, num_steps)
+            probas, coordinates, covariance_matrices = model(data, num_steps)
             assert torch.isfinite(coordinates).all()
             assert torch.isfinite(probas).all()
             assert torch.isfinite(covariance_matrices).all()
@@ -62,8 +60,8 @@ def train(args):
             # loss and optimizer
             xy_future_gt = data["future/xy"]
             loss = nll_with_covariances(
-                xy_future_gt, coordinates, probas, data["future/valid"].squeeze(-1),
-                covariance_matrices) * loss_coeff
+                xy_future_gt, coordinates, probas, data["future/valid"],
+                covariance_matrices)
             train_losses.append(loss.item())
             loss.backward()
             if "clip_grad_norm" in config["train"]:
@@ -92,14 +90,14 @@ def train(args):
                     losses = []
                     for data in tqdm(val_dataloader):
                         dict_to_cuda(data)
-                        probas, coordinates, covariance_matrices, loss_coeff = model(data, num_steps)
+                        probas, coordinates, covariance_matrices = model(data, num_steps)
                         if config["train"]["normalize_output"]:
                             xy_future_gt = (data["future/xy"] - torch.Tensor([1.4715e+01, 4.3008e-03]).cuda()) / 10.
                             assert torch.isfinite(xy_future_gt).all()
                             coordinates = coordinates * 10. + torch.Tensor([1.4715e+01, 4.3008e-03]).cuda()
                         loss = nll_with_covariances(
-                            xy_future_gt, coordinates, probas, data["future/valid"].squeeze(-1),
-                            covariance_matrices) * loss_coeff
+                            xy_future_gt, coordinates, probas, data["future/valid"],
+                            covariance_matrices)
                         losses.append(loss.item())
                     pbar.set_description(f"validation loss = {round(sum(losses) / len(losses), 2)}")
                     train_losses = []

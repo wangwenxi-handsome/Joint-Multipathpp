@@ -1,5 +1,4 @@
 import os
-import time
 import argparse
 from tqdm import tqdm
 import numpy as np
