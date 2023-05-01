@@ -8,7 +8,7 @@ from tqdm import tqdm
 from model.multipathpp import MultiPathPP
 from model.data import get_dataloader
 from model.losses import  nll_with_covariances
-from utils.utils import set_random_seed, get_last_file, get_git_revision_short_hash, dict_to_cuda, get_yaml_config
+from utils.utils import set_random_seed, get_last_file, get_git_revision_short_hash, dict_to_cuda, get_yaml_config, mask_by_valid
 
 
 def train(args):
@@ -58,9 +58,9 @@ def train(args):
             assert torch.isfinite(covariance_matrices).all()
 
             # loss and optimizer
-            xy_future_gt = data["future/xy"]
+            gt_valid = mask_by_valid(data["future/valid"], data["agent_valid"])
             loss = nll_with_covariances(
-                xy_future_gt, coordinates, probas, data["future/valid"],
+                data["future/xy"], coordinates, probas, gt_valid,
                 covariance_matrices)
             train_losses.append(loss.item())
             loss.backward()
@@ -91,8 +91,9 @@ def train(args):
                     for data in tqdm(val_dataloader):
                         dict_to_cuda(data)
                         probas, coordinates, covariance_matrices = model(data, num_steps)
+                        gt_valid = mask_by_valid(data["future/valid"], data["agent_valid"])
                         loss = nll_with_covariances(
-                            xy_future_gt, coordinates, probas, data["future/valid"],
+                            data["future/xy"], coordinates, probas, gt_valid,
                             covariance_matrices)
                         losses.append(loss.item())
                     pbar.set_description(f"validation loss = {round(sum(losses) / len(losses), 2)}")

@@ -21,6 +21,9 @@ def nll_with_covariances(gt, predictions, confidences, avails, covariance_matric
     avails = avails[:, :, None, :, :]
     coordinates_delta = (gt - predictions).unsqueeze(-1)
     errors = coordinates_delta.permute(0, 1, 2, 3, 5, 4) @ precision_matrices @ coordinates_delta
+
+    # print(torch.max(covariance_matrices), torch.min(covariance_matrices))
+
     errors = avails * (-0.5 * errors.squeeze(-1) - 0.5 * torch.logdet(covariance_matrices).unsqueeze(-1))
     assert torch.isfinite(errors).all()
     with np.errstate(divide="ignore"):

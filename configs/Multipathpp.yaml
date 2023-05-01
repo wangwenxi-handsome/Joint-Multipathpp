@@ -10,9 +10,9 @@ train:
       shuffle: True
       num_workers: 6
   optimizer:
-    lr: 0.0001
+    lr: 0.00001
   n_epochs: 100
-  validate_every_n_steps: 1000
+  validate_every_n_steps: 10000
   max_iterations: 5000001
   clip_grad_norm: 0.4
   scheduler: True
