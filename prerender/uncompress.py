@@ -17,8 +17,7 @@ def parse_arguments():
 def uncompress_one_file(file, data_path):
     np_data = dict(np.load(file, allow_pickle=True))
     for k in np_data:
-        np.savez(os.path.join(data_path, k), np_data[k])
-
+        np.savez(os.path.join(data_path, k), **np_data[k])
 
 def main():
     args = parse_arguments()

@@ -7,8 +7,8 @@ import numpy as np
 from tqdm import tqdm
 from model.multipathpp import MultiPathPP
 from model.data import get_dataloader
-from model.losses import  nll_with_covariances
-from utils.utils import set_random_seed, get_last_file, get_git_revision_short_hash, dict_to_cuda, get_yaml_config, mask_by_valid
+from model.losses import  nll_with_covariances, ade_loss
+from utils.utils import set_random_seed, get_last_file, dict_to_cuda, get_yaml_config, mask_by_valid
 
 
 def train(args):
@@ -21,10 +21,9 @@ def train(args):
     val_dataloader = get_dataloader(args.val_data_path, config["val"]["data_config"])
 
     # model init
-    checkpoints_path = os.path.join("checkpoints", get_git_revision_short_hash())
-    if(not os.path.exists(checkpoints_path)):
-        os.mkdir(checkpoints_path)
-    last_checkpoint = get_last_file(checkpoints_path)
+    if(not os.path.exists(args.save_folder)):
+        os.mkdir(args.save_folder)
+    last_checkpoint = get_last_file(args.save_folder)
     model = MultiPathPP(config["model"])
     model.cuda()
     optimizer = Adam(model.parameters(), **config["train"]["optimizer"])
@@ -38,14 +37,14 @@ def train(args):
         if config["train"]["scheduler"]:
             scheduler.load_state_dict(torch.load(last_checkpoint)["scheduler_state_dict"])
         print("LOADED ", last_checkpoint)
-    this_num_steps = 0
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
     print("N PARAMS=", params)
 
     # train and validation
+    best_loss = float('inf')
     train_losses = []
-    for _ in tqdm(range(config["train"]["n_epochs"])):
+    for epoch in tqdm(range(config["train"]["n_epochs"])):
         pbar = tqdm(dataloader)
         for data in pbar:
             # train
@@ -59,7 +58,7 @@ def train(args):
 
             # loss and optimizer
             gt_valid = mask_by_valid(data["future/valid"], data["agent_valid"])
-            loss = nll_with_covariances(
+            loss = ade_loss(
                 data["future/xy"], coordinates, probas, gt_valid,
                 covariance_matrices)
             train_losses.append(loss.item())
@@ -69,20 +68,10 @@ def train(args):
             optimizer.step()
 
             # log
-            if num_steps % 10 == 0:
-                pbar.set_description(f"loss = {round(loss.item(), 2)}")
-            # save
-            if num_steps % 1000 == 0 and this_num_steps > 0:
-                saving_data = {
-                    "num_steps": num_steps,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                }
-                if config["train"]["scheduler"]:
-                    saving_data["scheduler_state_dict"] = scheduler.state_dict()
-                torch.save(saving_data, os.path.join(checkpoints_path, f"last.pth"))
+            if num_steps % 1 == 0:
+                pbar.set_description(f"loss = {round(loss.item(), 2)}, epoch = {epoch}")
             # validation
-            if num_steps % (len(dataloader) // 2) == 0 and this_num_steps > 0:
+            if num_steps % config["train"]["validate_every_n_steps"] == 0 and num_steps > 0:
                 del data
                 torch.cuda.empty_cache()
                 model.eval()
@@ -92,24 +81,25 @@ def train(args):
                         dict_to_cuda(data)
                         probas, coordinates, covariance_matrices = model(data, num_steps)
                         gt_valid = mask_by_valid(data["future/valid"], data["agent_valid"])
-                        loss = nll_with_covariances(
+                        loss = ade_loss(
                             data["future/xy"], coordinates, probas, gt_valid,
                             covariance_matrices)
                         losses.append(loss.item())
                     pbar.set_description(f"validation loss = {round(sum(losses) / len(losses), 2)}")
                     train_losses = []
-                
-                saving_data = {
-                    "num_steps": num_steps,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                }
-                if config["train"]["scheduler"]:
-                    saving_data["scheduler_state_dict"] = scheduler.state_dict()
-                torch.save(saving_data, os.path.join(checkpoints_path, f"{num_steps}.pth"))
+
+                if sum(losses) / len(losses) < best_loss:
+                    best_loss = sum(losses) / len(losses)
+                    saving_data = {
+                        "num_steps": num_steps,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                    }
+                    if config["train"]["scheduler"]:
+                        saving_data["scheduler_state_dict"] = scheduler.state_dict()
+                    torch.save(saving_data, os.path.join(args.save_folder, f"best_{epoch}.pth"))
 
             num_steps += 1
-            this_num_steps += 1
             if "max_iterations" in config["train"] and num_steps > config["train"]["max_iterations"]:
                 break
 
@@ -119,6 +109,7 @@ def parse_arguments():
     parser.add_argument("--train_data_path", type=str, required=True)
     parser.add_argument("--val_data_path", type=str, required=True)
     parser.add_argument("--config", type=str, required=True, help="Vectorizer Config")
+    parser.add_argument("--save_folder", type=str, required=True, help="Save folder")
     args = parser.parse_args()
     return args
 

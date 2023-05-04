@@ -84,14 +84,12 @@ class SegmentAndAgentSequenceDataset(Dataset):
         return data
     
     def __getitem__(self, idx):
-        try:
-            np_data = dict(np.load(self._files[idx], allow_pickle=True))
-        except:
-            print("Error reading", self._files[idx])
-            idx = 0
-            np_data = dict(np.load(self._files[0], allow_pickle=True))
+        np_data = dict(np.load(self._files[idx], allow_pickle=True))
+        # for uncompressed data
+        if "arr_0" in np_data:
+            np_data = np_data["arr_0"].item()
 
-        np_data["scenario_id"] = np_data["scenario_id"].item()
+        np_data["scenario_id"] = np_data["scenario_id"]
         np_data["filename"] = self._files[idx]
         np_data["history/yaw"] = angle_to_range(np_data["history/yaw"])
         np_data = self._generate_sin_cos(np_data)

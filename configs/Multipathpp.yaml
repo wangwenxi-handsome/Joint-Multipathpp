@@ -3,18 +3,18 @@ train:
     dataset_config:
       lstm_input_data: ["xy", "yaw", "speed", "width", "length", "valid"]
       lstm_input_data_diff: ["xy", "yaw", "speed", "valid"]
-      mask_history: True
+      mask_history: False
       mask_history_fraction: 0.15
     dataloader_config:
-      batch_size: 8
+      batch_size: 512
       shuffle: True
-      num_workers: 6
+      num_workers: 8
   optimizer:
-    lr: 0.00001
-  n_epochs: 100
-  validate_every_n_steps: 10000
+    lr: 0.0001
+  n_epochs: 200
+  validate_every_n_steps: 1000
   max_iterations: 5000001
-  clip_grad_norm: 0.4
+  clip_grad_norm: 1
   scheduler: True
 
 val:
@@ -24,10 +24,9 @@ val:
       lstm_input_data_diff: ["xy", "yaw", "speed", "valid"]
       mask_history: False
     dataloader_config:
-      batch_size: 8
+      batch_size: 512
       shuffle: False
-      num_workers: 6
-
+      num_workers: 4
 
 model:
   n_trajectories: 6
@@ -143,7 +142,7 @@ model:
     identity_c_mlp: False
 
   decoder_config:
-    trainable_cov: True
+    trainable_cov: False
     size: 512
     n_trajectories: 6
     mcg_predictor:

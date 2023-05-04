@@ -4,6 +4,28 @@ import numpy as np
 from torch.distributions.lowrank_multivariate_normal import LowRankMultivariateNormal
 
 
+def ade_loss(gt, predictions, confidences, avails, covariance_matrices):
+    """
+    Compute ade loss.
+    Args:
+        gt.shape is [b, n, t, 2]
+        predictions.shape is [b, n, m, t, 2]
+        confidences.shape is [b, n, m]
+        avails.shape is [b, n, t, 1]
+        covariance_matrices,shape is [b, n, m, t, 2, 2]
+    Returns:
+        a single float number
+    """
+    gt = torch.unsqueeze(gt, 2)
+    avails = avails[:, :, None, :, :]
+    error = (gt - predictions) * (gt - predictions)
+    error = error * avails
+    error = torch.mean(error, axis=[-1, -2])
+    error, _ = torch.min(error, axis=-1)
+    assert torch.isfinite(error).all()
+    return torch.mean(error)
+
+
 def nll_with_covariances(gt, predictions, confidences, avails, covariance_matrices):
     """
     Compute nll loss.
@@ -21,9 +43,8 @@ def nll_with_covariances(gt, predictions, confidences, avails, covariance_matric
     avails = avails[:, :, None, :, :]
     coordinates_delta = (gt - predictions).unsqueeze(-1)
     errors = coordinates_delta.permute(0, 1, 2, 3, 5, 4) @ precision_matrices @ coordinates_delta
-
+    assert torch.isfinite(errors).all()
     # print(torch.max(covariance_matrices), torch.min(covariance_matrices))
-
     errors = avails * (-0.5 * errors.squeeze(-1) - 0.5 * torch.logdet(covariance_matrices).unsqueeze(-1))
     assert torch.isfinite(errors).all()
     with np.errstate(divide="ignore"):

@@ -14,3 +14,12 @@ The prerender module is completely self-contained.
 # Model
 ## Encoder
 ![image](docs/encoder.jpg)
+
+# Train
+```
+python3 train.py \
+    --train_data_path /path/to/train/data \
+    --val_data_path /path/to/validation/data \
+    --config configs/Multipathpp.yaml
+    --save_folder /save/path
+```
