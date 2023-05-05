@@ -19,7 +19,7 @@ def set_random_seed(seed = 42):
 
 
 def get_last_file(path):
-    list_of_files = glob.glob(f'{path}/*')
+    list_of_files = glob.glob(f'{path}/*.pth')
     if len(list_of_files) == 0:
         return None
     latest_file = max(list_of_files, key=os.path.getctime)

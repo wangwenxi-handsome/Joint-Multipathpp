@@ -3,6 +3,7 @@ import argparse
 import torch
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.tensorboard.writer import SummaryWriter
 import numpy as np
 from tqdm import tqdm
 from model.multipathpp import MultiPathPP
@@ -24,6 +25,7 @@ def train(args):
     if(not os.path.exists(args.save_folder)):
         os.mkdir(args.save_folder)
     last_checkpoint = get_last_file(args.save_folder)
+    writer = SummaryWriter(log_dir=args.save_folder)
     model = MultiPathPP(config["model"])
     model.cuda()
     optimizer = Adam(model.parameters(), **config["train"]["optimizer"])
@@ -69,9 +71,11 @@ def train(args):
 
             # log
             if num_steps % 1 == 0:
-                pbar.set_description(f"loss = {round(loss.item(), 2)}, epoch = {epoch}")
+                pbar.set_description(f"loss = {round(loss.item(), 2)}, lr={optimizer.param_groups[0]['lr']}, epoch = {epoch}")
             # validation
             if num_steps % config["train"]["validate_every_n_steps"] == 0 and num_steps > 0:
+                writer.add_scalar("train/ade_loss", loss.item(), num_steps)
+                writer.add_scalar("train/lr", optimizer.param_groups[0]['lr'], num_steps)
                 del data
                 torch.cuda.empty_cache()
                 model.eval()
@@ -85,8 +89,11 @@ def train(args):
                             data["future/xy"], coordinates, probas, gt_valid,
                             covariance_matrices)
                         losses.append(loss.item())
-                    pbar.set_description(f"validation loss = {round(sum(losses) / len(losses), 2)}")
+                    valid_loss = sum(losses) / len(losses)
+                    pbar.set_description(f"validation loss = {round(valid_loss, 2)}")
+                    writer.add_scalar("valid/loss", valid_loss, num_steps)
                     train_losses = []
+                    scheduler.step(valid_loss)
 
                 if sum(losses) / len(losses) < best_loss:
                     best_loss = sum(losses) / len(losses)
