@@ -3,9 +3,11 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 
+
 def angle_to_range(yaw):
     yaw = (yaw - np.pi) % (2 * np.pi) - np.pi
     return yaw
+
 
 class SegmentAndAgentSequenceDataset(Dataset):
     def __init__(self, data_path, config):

@@ -7,8 +7,9 @@ import numpy as np
 from tqdm import tqdm
 from model.multipathpp import MultiPathPP
 from model.data import get_dataloader
-from model.losses import  nll_with_covariances, ade_loss
+from model.losses import get_model_loss
 from utils.utils import set_random_seed, get_last_file, dict_to_cuda, get_yaml_config, mask_by_valid
+from model.normlization import normalize
 
 
 def train(args):
@@ -21,6 +22,7 @@ def train(args):
     val_dataloader = get_dataloader(args.val_data_path, config["val"]["data_config"])
 
     # model init
+    loss_func = get_model_loss(config["model"]["loss"])
     if(not os.path.exists(args.save_folder)):
         os.mkdir(args.save_folder)
     last_checkpoint = get_last_file(args.save_folder)
@@ -43,33 +45,33 @@ def train(args):
 
     # train and validation
     best_loss = float('inf')
-    train_losses = []
     for epoch in tqdm(range(config["train"]["n_epochs"])):
         pbar = tqdm(dataloader)
         for data in pbar:
             # train
             model.train()
             optimizer.zero_grad()
+            if config["train"]["data_config"]["dataset_config"]["normlization"]:
+                data = normalize(data)
             dict_to_cuda(data)
             probas, coordinates, covariance_matrices = model(data, num_steps)
-            assert torch.isfinite(coordinates).all()
-            assert torch.isfinite(probas).all()
-            assert torch.isfinite(covariance_matrices).all()
 
             # loss and optimizer
+            gt_xy = data["future/xy"] - data["history/xy"][:, :, -1:, :]
             gt_valid = mask_by_valid(data["future/valid"], data["agent_valid"])
-            loss = ade_loss(
-                data["future/xy"], coordinates, probas, gt_valid,
+            distance_loss, confidence_loss = loss_func(
+                gt_xy, coordinates, probas, gt_valid,
                 covariance_matrices)
-            train_losses.append(loss.item())
+            loss = distance_loss + confidence_loss
             loss.backward()
+
             if "clip_grad_norm" in config["train"]:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), config["train"]["clip_grad_norm"])
             optimizer.step()
 
             # log
             if num_steps % 1 == 0:
-                pbar.set_description(f"loss = {round(loss.item(), 2)}, epoch = {epoch}")
+                pbar.set_description(f"epoch={epoch}, loss={round(loss.item(), 2)}, distance={round(distance_loss.item(), 2)}, confidence={round(confidence_loss.item(), 2)}")
             # validation
             if num_steps % config["train"]["validate_every_n_steps"] == 0 and num_steps > 0:
                 del data
@@ -78,15 +80,18 @@ def train(args):
                 with torch.no_grad():
                     losses = []
                     for data in tqdm(val_dataloader):
+                        if config["val"]["data_config"]["dataset_config"]["normlization"]:
+                            data = normalize(data)
                         dict_to_cuda(data)
                         probas, coordinates, covariance_matrices = model(data, num_steps)
+                        gt_xy = data["future/xy"] - data["history/xy"][:, :, -1:, :]
                         gt_valid = mask_by_valid(data["future/valid"], data["agent_valid"])
-                        loss = ade_loss(
-                            data["future/xy"], coordinates, probas, gt_valid,
+                        distance_loss, confidence_loss = loss_func(
+                            gt_xy, coordinates, probas, gt_valid,
                             covariance_matrices)
+                        loss = distance_loss + confidence_loss
                         losses.append(loss.item())
                     pbar.set_description(f"validation loss = {round(sum(losses) / len(losses), 2)}")
-                    train_losses = []
 
                 if sum(losses) / len(losses) < best_loss:
                     best_loss = sum(losses) / len(losses)

@@ -4,7 +4,26 @@ import numpy as np
 from torch.distributions.lowrank_multivariate_normal import LowRankMultivariateNormal
 
 
-def ade_loss(gt, predictions, confidences, avails, covariance_matrices):
+def mean_ade_loss(gt, predictions, confidences, avails, covariance_matrices):
+    """
+    Compute ade loss.
+    Args:
+        gt.shape is [b, n, t, 2]
+        predictions.shape is [b, n, m, t, 2]
+        confidences.shape is [b, n, m]
+        avails.shape is [b, n, t, 1]
+        covariance_matrices,shape is [b, n, m, t, 2, 2]
+    Returns:
+        a single float number
+    """
+    gt = torch.unsqueeze(gt, 2)
+    avails = avails[:, :, None, :, :]
+    error = (gt - predictions) * (gt - predictions)
+    error = error * avails
+    return torch.mean(error), 0
+
+
+def min_ade_loss(gt, predictions, confidences, avails, covariance_matrices):
     """
     Compute ade loss.
     Args:
@@ -21,9 +40,11 @@ def ade_loss(gt, predictions, confidences, avails, covariance_matrices):
     error = (gt - predictions) * (gt - predictions)
     error = error * avails
     error = torch.mean(error, axis=[-1, -2])
-    error, _ = torch.min(error, axis=-1)
-    assert torch.isfinite(error).all()
-    return torch.mean(error)
+    error, idx = torch.min(error, axis=-1)
+    distance_loss = torch.mean(error)
+    confidences = nn.functional.softmax(confidences.reshape(-1, confidences.shape[-1]))
+    confidence_loss = nn.functional.cross_entropy(confidences, idx.reshape(-1))
+    return distance_loss, confidence_loss
 
 
 def nll_with_covariances(gt, predictions, confidences, avails, covariance_matrices):
@@ -54,7 +75,7 @@ def nll_with_covariances(gt, predictions, confidences, avails, covariance_matric
     return torch.mean(errors)
 
 
-def pytorch_neg_multi_log_likelihood_batch(gt, predictions, confidences, avails):
+def neg_multi_log_likelihood_batch(gt, predictions, confidences, avails):
     """
     Compute a negative log-likelihood for the multi-modal scenario.
     Args:
@@ -80,3 +101,15 @@ def pytorch_neg_multi_log_likelihood_batch(gt, predictions, confidences, avails)
     # error (batch_size, num_modes)
     error = -torch.logsumexp(error, dim=-1, keepdim=True)
     return torch.mean(error)
+
+
+def get_model_loss(name):
+    if name == "mean_ade":
+        return mean_ade_loss
+    if name == "min_ade":
+        return min_ade_loss
+    if name == "nll_with_covariances":
+        return nll_with_covariances
+    if name == "neg_multi_log_likelihood_batch":
+        return neg_multi_log_likelihood_batch
+    raise ValueError(f"{name} is not supported")

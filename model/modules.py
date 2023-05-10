@@ -155,65 +155,43 @@ class MCGBlock(nn.Module):
             return running_mean_c.squeeze()
 
 
-"""
-Decoder:
-    predict m numbers trajectory of each agent which is related to Gaussian Mixture Model.
-Input:
-    - final_embedding.shape is [b, n, d]
-Output:
-    - probas is [b, n, m]
-    - coordinates is [b, n, m, t, 2]
-    - covariance_matrices is [b, n, m, t, 2, 2]
-"""
-class Decoder(nn.Module):
+class HistoryEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
         self._config = config
-        self._learned_anchor_embeddings = torch.empty(
-            (1, 1, config["n_trajectories"], config["size"]))
-        stdv = 1. / math.sqrt(config["size"])
-        # stdv = 1. / config["size"]
-        # nn.init.xavier_normal_(self._learned_anchor_embeddings)
-        self._learned_anchor_embeddings.uniform_(-stdv, stdv)
-        self._learned_anchor_embeddings.requires_grad_(True)
-        self._learned_anchor_embeddings = nn.Parameter(self._learned_anchor_embeddings)
-        self._mcg_predictor = MCGBlock(config["mcg_predictor"])
-        self._mlp_decoder = NormalMLP(config["DECODER"])
-    
-    def forward(self, final_embedding):
-        assert torch.isfinite(self._learned_anchor_embeddings).all()
-        assert torch.isfinite(final_embedding).all()
-        trajectories_embeddings = self._mcg_predictor(
-            self._learned_anchor_embeddings.repeat(*final_embedding.shape[: 2], 1, 1),
-            final_embedding, return_s=True)
-        assert torch.isfinite(trajectories_embeddings).all()
-        res = self._mlp_decoder(trajectories_embeddings)
-        coordinates = res[:, :, :, :80 * 2].reshape(
-            *final_embedding.shape[: 2], self._config["n_trajectories"], 80, 2)
-        assert torch.isfinite(coordinates).all()
-        a = res[:, :, :, 80 * 2: 80 * 3].reshape(
-            *final_embedding.shape[: 2], self._config["n_trajectories"], 80, 1)
-        assert torch.isfinite(a).all()
-        b = res[:, :, :, 80 * 3: 80 * 4].reshape(
-            *final_embedding.shape[: 2], self._config["n_trajectories"], 80, 1)
-        assert torch.isfinite(b).all()
-        c = res[:, :, :, 80 * 4: 80 * 5].reshape(
-            *final_embedding.shape[: 2], self._config["n_trajectories"], 80, 1)
-        assert torch.isfinite(c).all()
-        probas = res[:, :, :, -1]
-        assert torch.isfinite(probas).all()
+        self._position_lstm = nn.LSTM(batch_first=True, **config["position_lstm_config"])
+        self._position_diff_lstm = nn.LSTM(batch_first=True, **config["position_diff_lstm_config"])
+        self._position_mcg = MCGBlock(config["position_mcg_config"])
 
-        if self._config["trainable_cov"]:
-            # http://www.inference.org.uk/mackay/covariance.pdf
-            covariance_matrices = (torch.cat([
-                torch.exp(a) * torch.cosh(b), torch.sinh(b),
-                torch.sinh(b), torch.exp(-a) * torch.cosh(b)
-            ], axis=-1) * torch.exp(c)).reshape(*coordinates.shape[: 4], 2, 2)
-        else:
-            _zeros, _ones = torch.zeros_like(a), torch.ones_like(a)
-            covariance_matrices = torch.cat([_ones, _zeros, _zeros, _ones], axis=-1).reshape(
-                *coordinates.shape[: 4], 2, 2)
-        return probas, coordinates, covariance_matrices
+    def forward(self, lstm_data, lstm_data_diff, mcg_data):
+        b, n = lstm_data.shape[0], lstm_data.shape[1]
+        position_lstm_embedding = self._position_lstm(lstm_data.reshape(-1, *lstm_data.shape[-2: ]))[0][:, -1:, :]
+        position_diff_lstm_embedding = self._position_diff_lstm(lstm_data_diff.reshape(-1, *lstm_data_diff.shape[-2: ]))[0][:, -1:, :]
+        position_mcg_embedding = self._position_mcg(mcg_data, return_s=False)
+        return torch.cat([
+            position_lstm_embedding.reshape(b, n, -1), 
+            position_diff_lstm_embedding.reshape(b, n, -1), 
+            position_mcg_embedding], axis=-1)
+
+
+class MHA(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        n_in = 640 #config["n_in"]
+        n_out = 640 #config["n_out"]
+        self._config = config
+        self._q = nn.Linear(n_in, n_out)
+        self._k = nn.Linear(n_in, n_out)
+        self._v = nn.Linear(n_in, n_out)
+        self._mha = nn.MultiheadAttention(n_out, 4, batch_first=True)
+    
+    def forward(self, traj_embeddings):
+        batch_size = traj_embeddings.shape[0]
+        Q = self._q(traj_embeddings)
+        K = self._k(traj_embeddings)
+        V = self._v(traj_embeddings)
+        trajectories_embeddings, _ = self._mha(Q, K, V)
+        return trajectories_embeddings
 
 
 class EM(nn.Module):
@@ -287,42 +265,97 @@ class EM(nn.Module):
             with torch.no_grad():
                 assert torch.isfinite(torch.logdet(covariance_matrices6)).all()
         return probas6, trajectories6, covariance_matrices6
-
-
-class HistoryEncoder(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self._config = config
-        self._position_lstm = nn.LSTM(batch_first=True, **config["position_lstm_config"])
-        self._position_diff_lstm = nn.LSTM(batch_first=True, **config["position_diff_lstm_config"])
-        self._position_mcg = MCGBlock(config["position_mcg_config"])
-
-    def forward(self, lstm_data, lstm_data_diff, mcg_data):
-        b, n = lstm_data.shape[0], lstm_data.shape[1]
-        position_lstm_embedding = self._position_lstm(lstm_data.reshape(-1, *lstm_data.shape[-2: ]))[0][:, -1:, :]
-        position_diff_lstm_embedding = self._position_diff_lstm(lstm_data_diff.reshape(-1, *lstm_data_diff.shape[-2: ]))[0][:, -1:, :]
-        position_mcg_embedding = self._position_mcg(mcg_data, return_s=False)
-        return torch.cat([
-            position_lstm_embedding.reshape(b, n, -1), 
-            position_diff_lstm_embedding.reshape(b, n, -1), 
-            position_mcg_embedding], axis=-1)
-
-
-class MHA(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        n_in = 640 #config["n_in"]
-        n_out = 640 #config["n_out"]
-        self._config = config
-        self._q = nn.Linear(n_in, n_out)
-        self._k = nn.Linear(n_in, n_out)
-        self._v = nn.Linear(n_in, n_out)
-        self._mha = nn.MultiheadAttention(n_out, 4, batch_first=True)
     
-    def forward(self, traj_embeddings):
-        batch_size = traj_embeddings.shape[0]
-        Q = self._q(traj_embeddings)
-        K = self._k(traj_embeddings)
-        V = self._v(traj_embeddings)
-        trajectories_embeddings, _ = self._mha(Q, K, V)
-        return trajectories_embeddings
+
+"""
+Decoder:
+    predict m numbers trajectory of each agent which is related to Gaussian Mixture Model.
+Input:
+    - final_embedding.shape is [b, n, d]
+Output:
+    - probas is [b, n, m]
+    - coordinates is [b, n, m, t, 2]
+    - covariance_matrices is [b, n, m, t, 2, 2]
+"""
+class MCGDecoder(nn.Module):
+    def __init__(self, n_trajs, config):
+        super().__init__()
+        self.n_trajs = n_trajs
+        self._config = config
+        self._learned_anchor_embeddings = torch.empty(
+            (1, 1, config["n_trajectories"], config["size"]))
+        stdv = 1. / math.sqrt(config["size"])
+        # stdv = 1. / config["size"]
+        # nn.init.xavier_normal_(self._learned_anchor_embeddings)
+        self._learned_anchor_embeddings.uniform_(-stdv, stdv)
+        self._learned_anchor_embeddings.requires_grad_(True)
+        self._learned_anchor_embeddings = nn.Parameter(self._learned_anchor_embeddings)
+        self._mcg_predictor = MCGBlock(config["mcg_predictor"])
+        self._mlp_decoder = NormalMLP(config["DECODER"])
+    
+    def forward(self, final_embedding):
+        assert torch.isfinite(self._learned_anchor_embeddings).all()
+        assert torch.isfinite(final_embedding).all()
+        trajectories_embeddings = self._mcg_predictor(
+            self._learned_anchor_embeddings.repeat(*final_embedding.shape[: 2], 1, 1),
+            final_embedding, return_s=True)
+        assert torch.isfinite(trajectories_embeddings).all()
+        res = self._mlp_decoder(trajectories_embeddings)
+        coordinates = res[:, :, :, :80 * 2].reshape(
+            *final_embedding.shape[: 2], self.n_trajs, 80, 2)
+        assert torch.isfinite(coordinates).all()
+        a = res[:, :, :, 80 * 2: 80 * 3].reshape(
+            *final_embedding.shape[: 2], self.n_trajs, 80, 1)
+        assert torch.isfinite(a).all()
+        b = res[:, :, :, 80 * 3: 80 * 4].reshape(
+            *final_embedding.shape[: 2], self.n_trajs, 80, 1)
+        assert torch.isfinite(b).all()
+        c = res[:, :, :, 80 * 4: 80 * 5].reshape(
+            *final_embedding.shape[: 2], self.n_trajs, 80, 1)
+        assert torch.isfinite(c).all()
+        probas = res[:, :, :, -1]
+        assert torch.isfinite(probas).all()
+
+        if self._config["trainable_cov"]:
+            # http://www.inference.org.uk/mackay/covariance.pdf
+            covariance_matrices = (torch.cat([
+                torch.exp(a) * torch.cosh(b), torch.sinh(b),
+                torch.sinh(b), torch.exp(-a) * torch.cosh(b)
+            ], axis=-1) * torch.exp(c)).reshape(*coordinates.shape[: 4], 2, 2)
+        else:
+            _zeros, _ones = torch.zeros_like(a), torch.ones_like(a)
+            covariance_matrices = torch.cat([_ones, _zeros, _zeros, _ones], axis=-1).reshape(
+                *coordinates.shape[: 4], 2, 2)
+        return probas, coordinates, covariance_matrices
+
+
+"""
+Decoder:
+    predict m numbers trajectory of each agent.
+Input:
+    - final_embedding.shape is [b, n, d]
+Output:
+    - probas is [b, n, m]
+    - coordinates is [b, n, m, t, 2]
+"""
+class MLPDecoder(nn.Module):
+    def __init__(self, n_trajs, config):
+        super().__init__()
+        self.n_trajs = n_trajs
+        self._config = config
+        self.mlp1 = NormalMLP(config["mlp1"])
+        self.mlp2 = NormalMLP(config["mlp2"])
+    
+    def forward(self, final_embedding):
+        b, n, _ = final_embedding.shape
+        assert torch.isfinite(final_embedding).all()
+        mode_embedding = self.mlp1(final_embedding).reshape(b, n, self.n_trajs, -1)
+        assert torch.isfinite(mode_embedding).all()
+        res = self.mlp2(mode_embedding)
+        assert torch.isfinite(res).all()
+        coordinates = res[:, :, :, :80 * 2].reshape(
+            *final_embedding.shape[: 2], self.n_trajs, 80, 2)
+        assert torch.isfinite(coordinates).all()
+        probas = res[:, :, :, -1]
+        assert torch.isfinite(probas).all()
+        return probas, coordinates, None
