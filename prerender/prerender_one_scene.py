@@ -18,6 +18,7 @@ def prerender_one_scene(file_path):
 
         # prerender the scene
         data = vectorizer.render(data, os.path.basename(file_path))
+        print(data[""])
         for i in data:
             if isinstance(data[i], np.ndarray):
                 print(i, data[i].shape)

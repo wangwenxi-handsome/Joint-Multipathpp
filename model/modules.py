@@ -355,7 +355,7 @@ class MLPDecoder(nn.Module):
         assert torch.isfinite(res).all()
         coordinates = res[:, :, :, :80 * 2].reshape(
             *final_embedding.shape[: 2], self.n_trajs, 80, 2)
-        assert torch.isfinite(coordinates).all()
+        yaws = res[:, :, :, 80 * 2: 80 * 3].reshape(
+            *final_embedding.shape[: 2], self.n_trajs, 80, 1)
         probas = res[:, :, :, -1]
-        assert torch.isfinite(probas).all()
-        return probas, coordinates, None
+        return probas, coordinates, yaws

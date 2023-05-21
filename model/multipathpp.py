@@ -21,7 +21,7 @@ class MultiPathPP(nn.Module):
         elif config["decoder"] == "MLPDecoder":
             self._decoder = MLPDecoder(config["n_trajectories"], config["decoder_config"]["MLPDecoder"])
     
-    def forward(self, data, num_steps):
+    def forward(self, data, num_steps=None):
         # Encoder
         # mcg_input_data_linear is [b, n, t, 128]
         mcg_input_data_linear = self._agent_mcg_linear(data["history/mcg_input_data"])
@@ -73,5 +73,6 @@ class MultiPathPP(nn.Module):
         # probas is [b, n, m]
         # coordinates is [b, n, m, t, 2]
         # covariance_matrices is [b, n, m, t, 2, 2]
-        probas, coordinates, covariance_matrices = self._decoder(agent_embedding)
-        return probas, coordinates, covariance_matrices
+        # heading is [b, n, m, t, 1]
+        probas, coordinates, yaws = self._decoder(agent_embedding)
+        return probas, coordinates, yaws

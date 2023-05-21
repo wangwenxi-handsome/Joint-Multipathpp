@@ -23,3 +23,12 @@ python3 train.py \
     --config configs/Multipathpp.yaml
     --save_folder /save/path
 ```
+
+# Rollout
+```
+python3 rollout.py \
+    --test_data_path /path/to/test/data \
+    --model_path /path/to/model \
+    --config configs/Multipathpp.yaml \
+    --save_path /path/to/save/output
+```

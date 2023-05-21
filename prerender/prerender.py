@@ -12,7 +12,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_path", type=str, required=True, help="Path to raw data")
     parser.add_argument("--output_path", type=str, required=True, help="Path to save data")
-    parser.add_argument("--config", type=str, required=True, help="Vectorizer Config")
+    parser.add_argument("--config", type=str, required=False, default="N16CloseSegAndValidAgentRenderer", help="Vectorizer Config")
     parser.add_argument("--n_jobs", type=int, default=0, required=False, help="Number of processes")
     parser.add_argument("--compress", type=bool, default=False, required=False, help="compress one tfrecord scene to one npz")
     args = parser.parse_args()

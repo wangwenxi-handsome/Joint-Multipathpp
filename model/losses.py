@@ -4,6 +4,35 @@ import numpy as np
 from torch.distributions.lowrank_multivariate_normal import LowRankMultivariateNormal
 
 
+def min_ade_prob_heading_loss(gt_xy, gt_valid, gt_yaw, probas, coordinates, yaws):
+    """
+    Compute ade loss.
+    Args:
+        gt_xy.shape is [b, n, t, 2]
+        coordinates.shape is [b, n, m, t, 2]
+        probas.shape is [b, n, m]
+        gt_valid.shape is [b, n, t, 1]
+        gt_yaw is [b, n, t, 1]
+        yaws is [b, n, m, t, 1]
+    Returns:
+        a single float number
+    """
+    gt_xy = torch.unsqueeze(gt_xy, 2)
+    gt_yaw = torch.unsqueeze(gt_yaw, 2)
+    gt_valid = torch.unsqueeze(gt_valid, 2)
+    error = (gt_xy - coordinates) * (gt_xy - coordinates)
+    error = error * gt_valid
+    error = torch.mean(error, axis=[-1, -2])
+    error, idx = torch.min(error, axis=-1)
+    distance_loss = torch.mean(error)
+    probas = nn.functional.softmax(probas.reshape(-1, probas.shape[-1]))
+    confidence_loss = nn.functional.cross_entropy(probas, idx.reshape(-1))
+    yaw_error = (gt_yaw - yaws) * (gt_yaw - yaws)
+    yaw_error = torch.mean(yaw_error, axis=[-1, -2])
+    yaw_loss = torch.mean(torch.gather(yaw_error, dim=-1, index=idx.unsqueeze(-1)))
+    return distance_loss, 0 * yaw_loss, 10 * confidence_loss
+
+
 def mean_ade_loss(gt, predictions, confidences, avails, covariance_matrices):
     """
     Compute ade loss.
@@ -20,7 +49,7 @@ def mean_ade_loss(gt, predictions, confidences, avails, covariance_matrices):
     avails = avails[:, :, None, :, :]
     error = (gt - predictions) * (gt - predictions)
     error = error * avails
-    return torch.mean(error), 0
+    return torch.mean(error), None
 
 
 def min_ade_loss(gt, predictions, confidences, avails, covariance_matrices):
@@ -44,7 +73,7 @@ def min_ade_loss(gt, predictions, confidences, avails, covariance_matrices):
     distance_loss = torch.mean(error)
     confidences = nn.functional.softmax(confidences.reshape(-1, confidences.shape[-1]))
     confidence_loss = nn.functional.cross_entropy(confidences, idx.reshape(-1))
-    return distance_loss, confidence_loss
+    return distance_loss, 0.1 * confidence_loss
 
 
 def nll_with_covariances(gt, predictions, confidences, avails, covariance_matrices):
@@ -112,4 +141,6 @@ def get_model_loss(name):
         return nll_with_covariances
     if name == "neg_multi_log_likelihood_batch":
         return neg_multi_log_likelihood_batch
+    if name == "min_ade_prob_heading":
+        return min_ade_prob_heading_loss
     raise ValueError(f"{name} is not supported")

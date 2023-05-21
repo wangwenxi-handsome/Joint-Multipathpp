@@ -54,15 +54,15 @@ def train(args):
             if config["train"]["data_config"]["dataset_config"]["normlization"]:
                 data = normalize(data)
             dict_to_cuda(data)
-            probas, coordinates, covariance_matrices = model(data, num_steps)
+            probas, coordinates, yaws = model(data, num_steps)
 
             # loss and optimizer
             gt_xy = data["future/xy"] - data["history/xy"][:, :, -1:, :]
+            gt_yaw = data["future/yaw"] - data["history/yaw"][:, :, -1:, :]
             gt_valid = mask_by_valid(data["future/valid"], data["agent_valid"])
-            distance_loss, confidence_loss = loss_func(
-                gt_xy, coordinates, probas, gt_valid,
-                covariance_matrices)
-            loss = distance_loss + confidence_loss
+            distance_loss, yaw_loss, confidence_loss = loss_func(
+                gt_xy, gt_valid, gt_yaw, probas, coordinates, yaws)
+            loss = distance_loss + yaw_loss + confidence_loss
             loss.backward()
 
             if "clip_grad_norm" in config["train"]:
@@ -71,7 +71,7 @@ def train(args):
 
             # log
             if num_steps % 1 == 0:
-                pbar.set_description(f"epoch={epoch}, loss={round(loss.item(), 2)}, distance={round(distance_loss.item(), 2)}, confidence={round(confidence_loss.item(), 2)}")
+                pbar.set_description(f"epoch={epoch} loss={round(loss.item(), 2)} distance_loss={round(distance_loss.item(), 2)} yaw_loss={round(yaw_loss.item(), 2)} confidence_loss={round(confidence_loss.item(), 2)}")
             # validation
             if num_steps % config["train"]["validate_every_n_steps"] == 0 and num_steps > 0:
                 del data
@@ -83,13 +83,13 @@ def train(args):
                         if config["val"]["data_config"]["dataset_config"]["normlization"]:
                             data = normalize(data)
                         dict_to_cuda(data)
-                        probas, coordinates, covariance_matrices = model(data, num_steps)
+                        probas, coordinates, yaws = model(data, num_steps)
                         gt_xy = data["future/xy"] - data["history/xy"][:, :, -1:, :]
+                        gt_yaw = data["future/yaw"] - data["history/yaw"][:, :, -1:, :]
                         gt_valid = mask_by_valid(data["future/valid"], data["agent_valid"])
-                        distance_loss, confidence_loss = loss_func(
-                            gt_xy, coordinates, probas, gt_valid,
-                            covariance_matrices)
-                        loss = distance_loss + confidence_loss
+                        distance_loss, yaw_loss, confidence_loss = loss_func(
+                            gt_xy, gt_valid, gt_yaw, probas, coordinates, yaws)
+                        loss = distance_loss + yaw_loss + confidence_loss
                         losses.append(loss.item())
                     pbar.set_description(f"validation loss = {round(sum(losses) / len(losses), 2)}")
 
@@ -113,7 +113,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_data_path", type=str, required=True)
     parser.add_argument("--val_data_path", type=str, required=True)
-    parser.add_argument("--config", type=str, required=True, help="Vectorizer Config")
+    parser.add_argument("--config", type=str, required=False, default="configs/Multipathpp.yaml", help="Vectorizer Config")
     parser.add_argument("--save_folder", type=str, required=True, help="Save folder")
     args = parser.parse_args()
     return args
