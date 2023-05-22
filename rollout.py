@@ -75,7 +75,7 @@ def rollout(args):
                 ).unsqueeze(2).repeat(1, 1, m, 1, 1)
                 xy = torch.cat([history_xy[:, :, :, -1:, :], coordinates[:, :, :, : -1, :]], axis=-2)
                 d_xy = coordinates - xy
-                yaws = torch.atan2(d_xy[:, :, :, :, 0], d_xy[:, :, :, :, 1]).unsqueeze(-1) + torch.acos(torch.zeros(1)).item() * 2
+                yaws = torch.atan2(d_xy[:, :, :, :, 1], d_xy[:, :, :, :, 0]).unsqueeze(-1) + torch.acos(torch.zeros(1)).item() * 2
                 yaws_smooth = (yaws[:, :, :, : -1, :] + yaws[:, :, :, 1: , :]) / 2
                 yaws = torch.cat([yaws_smooth, yaws[:, :, :, -1: , :]], axis=-2)
             else:
