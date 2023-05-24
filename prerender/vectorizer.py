@@ -54,7 +54,13 @@ class AgentFilteringPolicy:
     def _get_current_available_agents(self, data):
         return np.squeeze(data["state/current/valid"]) > 0
     
+    def _get_history_valid(self, data):
+        return (self._get_current_available_agents(data) + np.sum(data["state/past/valid"], axis=1)) > 0
+    
     def filter(self, data):
+        if self._config["select_all_agent"]:
+            return np.ones(len(data["state/current/valid"])) == 1, self._get_history_valid(data)
+            
         # Returns np.array of shape [N], which represents seleted agent.
         target_valid = self._get_target_agents(data)
         target_num = np.sum(target_valid)
@@ -132,13 +138,13 @@ class SegmentAndAgentSequenceRender(Renderer):
             polyline_start_end = np.array(
                 [polyline_nodes[:-1], polyline_nodes[1:]]).transpose(1, 0, 2)
             result.append(polyline_start_end)
-
             segment_types.extend([polyline_type] * len(polyline_start_end))
-        result = np.concatenate(result, axis=0)
+        if len(result) > 0:
+            result = np.concatenate(result, axis=0)
         assert len(segment_types) == len(result), \
             f"Number of segments {len(result)} doen't match the number of types {len(segment_types)}"
         return {
-            "segments": result,
+            "segments": np.array(result),
             "segment_types": np.array(segment_types)}
     
     def _split_past_and_future(self, data, key):
@@ -246,34 +252,44 @@ class SegmentAndAgentSequenceRender(Renderer):
             agent_history_info["future/bbox_yaw"] - current_agent_scene_yaw
 
         # compute related polylines of target agents
-        current_scene_road_network_coordinates = self._transfrom_to_agent_coordinate_system(
-            road_network_info["segments"], current_agent_scene_shift, current_agent_scene_yaw)
+        if (len(road_network_info["segments"]) > 0):
+            current_scene_road_network_coordinates = self._transfrom_to_agent_coordinate_system(
+                road_network_info["segments"], current_agent_scene_shift, current_agent_scene_yaw)
+        else:
+            current_scene_road_network_coordinates = np.array([])
+            
         road_segments_valid = []
         road_segments_embeddings = []
         for i in range(len(agent_history_info["history/xy"])):
-            target_road_network_coordinates, target_road_network_types = \
-                self._filter_closest_segments(
-                    current_scene_agents_coordinates_history[i][-1], 
-                    current_scene_road_network_coordinates, 
-                    road_network_info["segment_types"]
+            if (len(current_scene_road_network_coordinates) == 0) or (not agent_valid[i]):
+                target_road_segments_embeddings = np.array([])
+            else:
+                map_valid_time = np.where(agent_history_info["history/valid"][i])[0][-1]
+                target_road_network_coordinates, target_road_network_types = \
+                    self._filter_closest_segments(
+                        current_scene_agents_coordinates_history[i][map_valid_time], 
+                        current_scene_road_network_coordinates, 
+                        road_network_info["segment_types"]
+                    )
+                target_road_segments_embeddings = self._generate_segment_embeddings(
+                    current_scene_agents_coordinates_history[i][map_valid_time], 
+                    current_scene_agents_yaws_history[i][map_valid_time],
+                    target_road_network_coordinates, 
+                    target_road_network_types
                 )
-            target_road_segments_embeddings = self._generate_segment_embeddings(
-                current_scene_agents_coordinates_history[i][-1], 
-                current_scene_agents_yaws_history[i][-1],
-                target_road_network_coordinates, 
-                target_road_network_types
-            )
 
             # padding to n_closest_segments
+            # !!!TODO: 31 is hard coding
             target_road_segments_valid = np.ones(self._config["n_closest_segments"]) == 1
             if len(target_road_segments_embeddings) < self._config["n_closest_segments"]:
                 target_road_segments_valid[len(target_road_segments_embeddings): ] = False
-                target_road_segments_embeddings = np.concatenate([
-                    target_road_segments_embeddings,
-                    np.zeros((
-                        self._config["n_closest_segments"] - len(target_road_segments_embeddings),
-                        target_road_segments_embeddings.shape[-1]))
-                ], axis=0)
+                if len(target_road_segments_embeddings) == 0:
+                    target_road_segments_embeddings = np.zeros((self._config["n_closest_segments"], 31))
+                else:
+                    target_road_segments_embeddings = np.concatenate([
+                        target_road_segments_embeddings,
+                        np.zeros((self._config["n_closest_segments"] - len(target_road_segments_embeddings), 31))
+                    ], axis=0)
             road_segments_valid.append(target_road_segments_valid)
             road_segments_embeddings.append(target_road_segments_embeddings)
         road_segments_valid = np.stack(road_segments_valid, axis = 0)

@@ -3,9 +3,11 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 
+
 def angle_to_range(yaw):
     yaw = (yaw - np.pi) % (2 * np.pi) - np.pi
     return yaw
+
 
 class SegmentAndAgentSequenceDataset(Dataset):
     def __init__(self, data_path, config):
@@ -36,7 +38,8 @@ class SegmentAndAgentSequenceDataset(Dataset):
         diff_keys = ["history/xy", "history/yaw", "history/speed"]
         for key in diff_keys:
             if key.endswith("yaw"):
-                data[f"{key}_diff"] = angle_to_range(np.diff(data[key], axis=1))
+                # data[f"{key}_diff"] = angle_to_range(np.diff(data[key], axis=1))
+                data[f"{key}_diff"] = np.diff(data[key], axis=1)
             else:
                 data[f"{key}_diff"] = np.diff(data[key], axis=1)
         data["history/yaw_sin_diff"] = np.sin(data["history/yaw_diff"])
@@ -91,7 +94,8 @@ class SegmentAndAgentSequenceDataset(Dataset):
 
         np_data["scenario_id"] = np_data["scenario_id"]
         np_data["filename"] = self._files[idx]
-        np_data["history/yaw"] = angle_to_range(np_data["history/yaw"])
+        # np_data["history/yaw"] = angle_to_range(np_data["history/yaw"])
+        np_data["history/yaw"] = np_data["history/yaw"]
         np_data = self._generate_sin_cos(np_data)
         np_data = self._add_length_width(np_data)
         if self._config["mask_history"]:

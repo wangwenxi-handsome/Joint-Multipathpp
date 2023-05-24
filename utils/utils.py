@@ -35,7 +35,8 @@ def dict_to_cuda(d):
         'history/lstm_data', 'history/lstm_data_diff',
         'history/mcg_input_data', 'history/mcg_input_data',
         'batch_size', 'road_network_embeddings', 
-        'future/xy', 'future/valid',
+        'future/xy', 'future/valid', 'future/yaw', 
+        "history/xy", "history/yaw", "yaw",
         'agent_valid', 'road_segments_valid'])
     for k in d.keys():
         if k not in passing_keys:

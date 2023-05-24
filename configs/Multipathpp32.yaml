@@ -5,14 +5,15 @@ train:
       lstm_input_data_diff: ["xy", "yaw", "speed", "valid"]
       mask_history: False
       mask_history_fraction: 0.15
+      normlization: True
     dataloader_config:
-      batch_size: 512
+      batch_size: 128
       shuffle: True
-      num_workers: 8
+      num_workers: 4
   optimizer:
-    lr: 0.0001
+    lr: 0.001
   n_epochs: 200
-  validate_every_n_steps: 1000
+  validate_every_n_steps: 4000
   max_iterations: 5000001
   clip_grad_norm: 1
   scheduler: True
@@ -23,14 +24,29 @@ val:
       lstm_input_data: ["xy", "yaw", "speed", "width", "length", "valid"]
       lstm_input_data_diff: ["xy", "yaw", "speed", "valid"]
       mask_history: False
+      normlization: True
     dataloader_config:
-      batch_size: 512
+      batch_size: 128
       shuffle: False
       num_workers: 4
 
+test:
+  data_config:
+    dataset_config:
+      lstm_input_data: ["xy", "yaw", "speed", "width", "length", "valid"]
+      lstm_input_data_diff: ["xy", "yaw", "speed", "valid"]
+      mask_history: False
+      normlization: True
+    dataloader_config:
+      batch_size: 256
+      shuffle: False
+      num_workers: 0
+
 model:
-  n_trajectories: 6
+  n_trajectories: 32
   size: 512
+  decoder: "MLPDecoder"
+  loss: "min_ade_prob_heading"
 
   agent_mcg_linear:
     layers: [24, 32, 64, 128]
@@ -142,27 +158,39 @@ model:
     identity_c_mlp: False
 
   decoder_config:
-    trainable_cov: False
-    size: 512
-    n_trajectories: 6
-    mcg_predictor:
-      block:
-        c_bias: True
-        mlp:
-          n_layers: 3
-          n_in: 512
-          n_out: 512
-          bias: True
-          batchnorm: False
-          dropout: False
-      agg_mode: "max"
-      running_mean_mode: "real"
-      alpha: 0.1
-      beta: 0.9
-      n_blocks: 5
-      identity_c_mlp: False
-    DECODER:
-      layers: [512, 512, 401]
-      pre_activation: True
-      pre_batchnorm: False
-      batchnorm: False
+    MCGDecoder:
+      trainable_cov: False
+      size: 512
+      mcg_predictor:
+        block:
+          c_bias: True
+          mlp:
+            n_layers: 3
+            n_in: 512
+            n_out: 512
+            bias: True
+            batchnorm: False
+            dropout: False
+        agg_mode: "max"
+        running_mean_mode: "real"
+        alpha: 0.1
+        beta: 0.9
+        n_blocks: 5
+        identity_c_mlp: False
+      DECODER:
+        layers: [512, 512, 401]
+        pre_activation: True
+        pre_batchnorm: False
+        batchnorm: False
+
+    MLPDecoder:
+      mlp1:
+        layers: [512, 1024, 2048]
+        pre_activation: False
+        pre_batchnorm: False
+        batchnorm: False
+      mlp2:
+        layers: [64, 128, 241]
+        pre_activation: True
+        pre_batchnorm: False
+        batchnorm: False

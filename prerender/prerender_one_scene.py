@@ -1,6 +1,4 @@
 import os
-import sys
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),".."))
 import time
 import numpy as np
 import tensorflow as tf
@@ -20,6 +18,7 @@ def prerender_one_scene(file_path):
 
         # prerender the scene
         data = vectorizer.render(data, os.path.basename(file_path))
+        print(data[""])
         for i in data:
             if isinstance(data[i], np.ndarray):
                 print(i, data[i].shape)

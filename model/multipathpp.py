@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from .modules import MCGBlock, HistoryEncoder, MLP, NormalMLP, Decoder
+from .modules import MCGBlock, HistoryEncoder, MLP, NormalMLP, MCGDecoder, MLPDecoder
 from utils.utils import mask_by_valid
 
 class MultiPathPP(nn.Module):
@@ -15,10 +15,13 @@ class MultiPathPP(nn.Module):
         self._polyline_encoder = NormalMLP(config["polyline_encoder"])
         self._roadgraph_mcg_encoder = MCGBlock(config["roadgraph_mcg_encoder"])
         self._agent_linear = MLP(config["agent_linear"])
-        self._agent_mcg_encoder = MCGBlock(config["agent_mcg_encoder"])
-        self._decoder = Decoder(config["decoder_config"])
+        # self._agent_mcg_encoder = MCGBlock(config["agent_mcg_encoder"])
+        if config["decoder"] == "MCGDecoder":
+            self._decoder = MCGDecoder(config["n_trajectories"], config["decoder_config"]["MCGDecoder"])
+        elif config["decoder"] == "MLPDecoder":
+            self._decoder = MLPDecoder(config["n_trajectories"], config["decoder_config"]["MLPDecoder"])
     
-    def forward(self, data, num_steps):
+    def forward(self, data, num_steps=None):
         # Encoder
         # mcg_input_data_linear is [b, n, t, 128]
         mcg_input_data_linear = self._agent_mcg_linear(data["history/mcg_input_data"])
@@ -58,19 +61,18 @@ class MultiPathPP(nn.Module):
             [agents_info_embeddings, agent_intention_embedding, roadgraph_mcg_embedding], dim=-1)
         agent_embedding = self._agent_linear(agent_embedding)
         agent_embedding = mask_by_valid(agent_embedding, data["agent_valid"])
+        """
         agent_embedding = self._agent_mcg_encoder(
             agent_embedding.unsqueeze(1).repeat(1, agent_embedding.shape[1], 1, 1), 
             agent_embedding, return_s=False)
         agent_embedding = mask_by_valid(agent_embedding, data["agent_valid"])
+        """
         assert torch.isfinite(agent_embedding).all()
 
         # Decoder
         # probas is [b, n, m]
         # coordinates is [b, n, m, t, 2]
         # covariance_matrices is [b, n, m, t, 2, 2]
-        probas, coordinates, covariance_matrices = self._decoder(agent_embedding)
-        assert probas.shape[2] == coordinates.shape[2] == covariance_matrices.shape[2] == self._config["n_trajectories"]
-        assert torch.isfinite(probas).all()
-        assert torch.isfinite(coordinates).all()
-        assert torch.isfinite(covariance_matrices).all()
-        return probas, coordinates, covariance_matrices
+        # heading is [b, n, m, t, 1]
+        probas, coordinates, yaws = self._decoder(agent_embedding)
+        return probas, coordinates, yaws
