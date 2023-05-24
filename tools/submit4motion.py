@@ -1,3 +1,8 @@
+"""
+Submit for motion prediction.
+Npz files maked by unzip_tf_record.py (line 124) and raw tf sample data (line 27) are needed.
+"""
+
 import os
 import tarfile
 import numpy as np
@@ -8,7 +13,7 @@ import pickle
 from waymo_open_dataset.protos import scenario_pb2
 from waymo_open_dataset.protos import motion_submission_pb2
 import sys
-sys.path.append("/root/competition/waymo_sim_agent/prerender")
+sys.path.append("../prerender")
 
 from features_description import generate_features_description
 from configs import get_vectorizer_config
@@ -19,8 +24,7 @@ def main():
     os.makedirs(OUTPUT_ROOT_DIRECTORY, exist_ok=True)
     output_filenames = []
 
-    # VALIDATION_FILES = "/root/competition/dataset/scenario/validation/*tfrecord*"
-    VALIDATION_FILES = "/root/competition/dataset/tfsample/testing/*tfrecord*"
+    VALIDATION_FILES = "/root/competition/dataset/tfsample/testing/*tfrecord*"  # tf sample data
     filenames = tf.io.matching_files(VALIDATION_FILES)
     vectorizer_config = get_vectorizer_config("N32CloseSegAndValidAgentRenderer")
     vectorizer = vectorizer_config["class"](vectorizer_config)
@@ -114,14 +118,6 @@ def scenario_rollouts_from_states(
   return motion_submission_pb2.ChallengeScenarioPredictions(
       # Note: remember to include the Scenario ID in the proto message.
       single_predictions=single_predictions, scenario_id=scenario_id)
-
-
-def parse_one_tf_example(scenario_id: str):
-    file = os.path.join("/root/competition/dataset/prerender/testing/", f"scid_{scenario_id}.npz")
-    source_data = dict(np.load(file, allow_pickle=True))
-    if "arr_0" in source_data:
-        source_data = source_data["arr_0"].item()
-    return source_data
 
 
 def parse_one_pred_file(scenario_id: str):

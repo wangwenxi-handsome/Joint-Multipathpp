@@ -1,3 +1,8 @@
+"""
+Submit for motion prediction.
+Npz files maked by unzip_tf_record.py (line 224) and raw scenario data (line 39) are needed.
+"""
+
 import os
 import tarfile
 import numpy as np
@@ -31,7 +36,6 @@ def main():
     os.makedirs(OUTPUT_ROOT_DIRECTORY, exist_ok=True)
     output_filenames = []
 
-    # VALIDATION_FILES = "/root/competition/dataset/scenario/validation/*tfrecord*"
     VALIDATION_FILES = "/root/competition/dataset/scenario/testing/*tfrecord*"
     filenames = tf.io.matching_files(VALIDATION_FILES)
     # Iterate over shards. This could be parallelized in any custom way, as the
@@ -67,9 +71,9 @@ def main():
         shard_submission = sim_agents_submission_pb2.SimAgentsChallengeSubmission(
             scenario_rollouts=scenario_rollouts,
             submission_type=sim_agents_submission_pb2.SimAgentsChallengeSubmission.SIM_AGENTS_SUBMISSION,
-            account_name='zhenghaotian1998@163.com',
+            account_name='xxx@xxx.com',
             unique_method_name='multipath',
-            authors=['WenxiWang', 'Haotian Zhen'],
+            authors=['xxx'],
             affiliation='waymo',
             description='Submission from the Sim Agents tutorial',
             method_link='https://waymo.com/open/'
