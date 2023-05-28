@@ -1,7 +1,6 @@
 # Joint Multipath++ for Sim Agent in waymo competition 2023
-Autonomous driving sim_agent in waymo competition
 
-# Prenrender
+## Prenrender
 First we need to prepare data for training. The prerender script will convert the original data format into set of .npz files each containing the data for one scene. From code folder run
 ```
 python3 prerender/prerender.py \
@@ -11,11 +10,11 @@ python3 prerender/prerender.py \
 ```
 The prerender module is completely self-contained.
 
-# Model
-## Encoder
+## Model
+### Encoder
 ![image](docs/encoder.jpg)
 
-# Train
+## Train
 ```
 python3 train.py \
     --train_data_path /path/to/train/data \
@@ -24,7 +23,7 @@ python3 train.py \
     --save_folder /save/path
 ```
 
-# Rollout
+## Rollout
 ```
 python3 rollout.py \
     --test_data_path /path/to/test/data \
