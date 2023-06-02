@@ -1,6 +1,6 @@
 # Joint Multipath++ for Sim Agent
 
-## Prenrender
+## Prerender
 First we need to prepare data for training. The prerender script will convert the original data format into set of .npz files each containing the data for one scene. From code folder run
 ```
 python3 prerender/prerender.py \
