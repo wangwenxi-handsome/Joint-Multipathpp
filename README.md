@@ -1,4 +1,5 @@
 # Joint Multipath++ for Sim Agent
+Joint Multipath++(2nd) for Sim Agent in waymo competition 2023 of CVPR workshop
 
 ## Prerender
 First we need to prepare data for training. The prerender script will convert the original data format into set of .npz files each containing the data for one scene. From code folder run
