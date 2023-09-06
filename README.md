@@ -1,5 +1,6 @@
 # Joint Multipath++ for Sim Agent
 Joint Multipath++(2nd) for Sim Agent in waymo competition 2023 of CVPR workshop
+Paper: https://storage.googleapis.com/waymo-uploads/files/research/2023%20Technical%20Reports/SA_hm_jointMP.pdf
 
 ## Prerender
 First we need to prepare data for training. The prerender script will convert the original data format into set of .npz files each containing the data for one scene. From code folder run
